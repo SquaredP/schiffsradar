@@ -2,7 +2,7 @@
 
 Mobile Live-Karte für Schiffe auf Rhein, Neckar, Main und Co. – das Gegenstück zum [Zugradar](https://github.com/SquaredP/zugradar). Zeigt, wo Schiffe gerade fahren, wohin sie wollen und wann sie an deinem Ort vorbeikommen.
 
-**Live:** https://squaredp.github.io/schiffradar/
+**Live:** https://squaredp.github.io/schiffsradar/
 
 ## Funktionen
 
