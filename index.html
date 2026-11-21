@@ -481,6 +481,12 @@ function parseChangelog(md){
 
 const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem('sr.'+k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem('sr.'+k,JSON.stringify(v));}catch(e){}},del(k){try{localStorage.removeItem('sr.'+k);}catch(e){}}};
+/* Zwischenspeicher im Gerät (IndexedDB): Schiffe, Wasserwege, Zeichen. Beim Neuladen erscheinen sofort die gespeicherten Daten,
+   die aktuellen kommen im Hintergrund nach. Alles ist optional: Fehlt IndexedDB, läuft die Seite wie ohne Speicher. */
+const kv=(()=>{let dbp=null;
+  const open=()=>dbp||(dbp=new Promise((res,rej)=>{try{const q=indexedDB.open('schiffsradar',1);q.onupgradeneeded=()=>q.result.createObjectStore('kv');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);}catch(e){rej(e);}}));
+  const run=(mode,fn)=>open().then(db=>new Promise((res,rej)=>{const tx=db.transaction('kv',mode),r=fn(tx.objectStore('kv'));tx.oncomplete=()=>res(r&&r.result);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error);}));
+  return{get:k=>run('readonly',o=>o.get(k)).catch(()=>undefined),set:(k,v)=>run('readwrite',o=>o.put(v,k)).catch(()=>{})};})();
 const hhmm=t=>t==null?'–':new Date(t).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
 const nf=(x,d)=>Number(x).toLocaleString('de-DE',{maximumFractionDigits:d==null?1:d,minimumFractionDigits:0});
 const kmh=s=>s.sog==null?null:Math.round(s.sog*1.852);
@@ -496,7 +502,7 @@ const state={
   favs:store.get('favs',[]),
   onlyPlace:false,placeShips:new Set(),
   query:'',queryRaw:'',found:[],
-  ships:new Map(),src:'live',liveErr:null,meta:null,lastOk:0,err:null,note:null,
+  ships:new Map(),src:'live',liveErr:null,meta:null,lastOk:0,err:null,note:null,cacheAt:0,fresh:false,
   sel:null,        // {m,follow,dest,showData}
   tab:'map',sheet:null
 };
@@ -561,6 +567,11 @@ function parseLive(j,prev){
   for(const m of keep)if(!ships.has(m)&&prev.has(m))ships.set(m,prev.get(m));
   return ships;
 }
+let shipsSavedAt=0;
+function saveShips(){
+  if(Date.now()-shipsSavedAt<15000)return;shipsSavedAt=Date.now();
+  kv.set('ships',{at:Date.now(),src:state.src,ships:[...state.ships.values()].map(({_sn,...r})=>r)});
+}
 async function loadLive(){
   const b=map.getBounds().pad(.2);
   const u=LIVE+'?bbox='+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(4)).join(',')+'&max_age=90m';
@@ -571,7 +582,7 @@ async function loadLive(){
   const j=await r.json();
   state.ships=parseLive(j,state.ships);
   state.meta={ok:true,live:true,generated:Math.floor(Date.now()/1000),truncated:!!j.truncated};
-  state.err=null;state.lastOk=Date.now();
+  state.err=null;state.lastOk=Date.now();state.fresh=true;saveShips();
 }
 async function loadFile(){
   let r;
@@ -583,7 +594,7 @@ async function loadFile(){
     if(s.lat==null||s.lon==null||s.ts==null)continue;
     s.cat=catOf(s.t);s.name=s.n||'MMSI '+s.m;ships.set(s.m,s);
   }
-  state.ships=ships;state.meta=j;state.err=null;state.lastOk=Date.now();lastFile=Date.now();
+  state.ships=ships;state.meta=j;state.err=null;state.lastOk=Date.now();lastFile=Date.now();state.fresh=true;saveShips();
 }
 async function loadData(){
   if(document.hidden||loadingData)return;
@@ -609,6 +620,7 @@ function setStatus(text,err){const s=$('status');s.textContent=text;s.classList.
 function note(text,err,ms){state.note={text,err:!!err,until:Date.now()+ms};setStatus(text,!!err);}
 function statusLine(shown){
   const m=state.meta;if(!m)return null;
+  if(state.cacheAt&&!state.fresh&&map.getZoom()>=MIN_ZOOM)return['Gespeicherter Stand von '+hhmm(state.cacheAt)+' · '+shown+(shown===1?' Schiff':' Schiffe')+' · aktuelle Daten werden geladen …',false];
   if(m.ok===false&&m.reason==='no-key')return['Datenquelle noch nicht eingerichtet: Es fehlt der API-Schlüssel für aisstream.io (siehe README).',true];
   if(m.live){let t='Live · Stand '+hhmm(m.generated*1000)+' · '+shown+(shown===1?' Schiff':' Schiffe');if(m.truncated)t+=' · Ausschnitt voll, näher heranzoomen';if(state.query&&!shown)t='Kein Schiff „'+state.queryRaw+'“ im Ausschnitt.';return[t,false];}
   const gen=m.generated*1000,age=(Date.now()-gen)/60000;
@@ -769,17 +781,19 @@ function paintRoute(){
 }
 /* Gesamtstrecke zum Ziel planen: Gewässernetz zwischen Schiff und Ziel laden, kürzesten Weg suchen.
    Neu geplant wird bei jeder neuen Meldung des Schiffs. */
-let RN=null,RNbox=null;
+let RN=null,RNbox=null,RNtried=false;
 async function loadRouteNet(a,b){
   const S=Math.min(a[0],b[0])-.2,N=Math.max(a[0],b[0])+.2,W=Math.min(a[1],b[1])-.3,E=Math.max(a[1],b[1])+.3;
   const area=(N-S)*(E-W)*Math.cos((S+N)*Math.PI/360);
   if(area>40)return null;
+  if(!RN&&!RNtried){RNtried=true;const c=await kv.get('route');if(c&&c.els&&Date.now()-c.at<7*864e5){RN=buildNet(c.els);RNbox=c.box;}}
   if(RN&&RNbox&&RNbox[0]<=S&&RNbox[1]<=W&&RNbox[2]>=N&&RNbox[3]>=E)return RN;
   const filt=area>3?'["cemt"~"^(III|IV|Va|Vb|VIa|VIb|VIc|VII|[3-7])"]':'';   // große Gebiete: nur Wasserstraßen mit Klasseneinstufung
   const q='[out:json][timeout:60];way["waterway"~"^(river|canal)$"]'+filt+'('+[S,W,N,E].map(x=>x.toFixed(4)).join(',')+');out geom;';
   const r=await overpass(q);
   if(!r.ok)throw new Error(r.status);
-  RN=buildNet((await r.json()).elements||[]);RNbox=[S,W,N,E];return RN;
+  const els=(await r.json()).elements||[];
+  RN=buildNet(els);RNbox=[S,W,N,E];kv.set('route',{at:Date.now(),box:RNbox,els:slim(els)});return RN;
 }
 async function planRoute(sel){
   const s=state.ships.get(sel.m),d=sel.dest;
@@ -1105,19 +1119,21 @@ async function nameFromMap(c){
 
 
 /* Flüsse und Kanäle aus OpenStreetMap (Overpass), für den sichtbaren Ausschnitt, 30 min zwischengespeichert */
+const WAYS_TTL=864e5;   // Flussverlauf ändert sich kaum: 24 h behalten
 let wBox=null,wAt=0,wBusy=false;
+const slim=els=>els.filter(w=>w.nodes&&w.geometry).map(w=>({nodes:w.nodes,geometry:w.geometry,tags:{name:(w.tags||{}).name,cemt:(w.tags||{}).cemt,waterway:(w.tags||{}).waterway}}));
 async function loadWays(){
   if(map.getZoom()<MIN_ZOOM||document.hidden||wBusy)return;
-  if(wBox&&wBox.contains(map.getBounds())&&Date.now()-wAt<1800000)return;
+  if(wBox&&wBox.contains(map.getBounds())&&Date.now()-wAt<WAYS_TTL)return;
   const b=map.getBounds().pad(.6);wBusy=true;
   try{
     const q='[out:json][timeout:30];way["waterway"~"^(river|canal)$"]('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+');out geom;';
     const r=await overpass(q);
     if(!r.ok)throw new Error(r.status);
-    const net=buildNet((await r.json()).elements||[]);
-    if(net.edges.length){WN=net;wver++;wState='ok';}else wState='leer';
+    const els=(await r.json()).elements||[],net=buildNet(els);
+    if(net.edges.length){WN=net;wver++;wState='ok';kv.set('ways',{at:Date.now(),box:[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()],els:slim(els)});}else wState='leer';
     wBox=b;wAt=Date.now();
-  }catch(e){wAt=Date.now()-1500000;wState='Abruf fehlgeschlagen';}finally{wBusy=false;}   // bei Fehler in ca. 5 min neu versuchen
+  }catch(e){wAt=Date.now()-WAYS_TTL+300000;wState=WN?'ok':'Abruf fehlgeschlagen';}finally{wBusy=false;}   // bei Fehler in ca. 5 min neu versuchen
   render();
 }
 
@@ -1150,18 +1166,28 @@ function applySea(){
 }
 const SEA_RE={tonne:'buoy_.*',bake:'beacon_.*',feuer:'light.*',zeichen:'notice',bauwerk:'.*(bridge|gate|lock|weir|dam).*',hafen:'.*(berth|harbour|small_craft|mooring|anchor|marina).*'};
 let seaKey='',seaInfo='',seaStatic;   // seaStatic: undefined = noch nicht versucht, null = Datei fehlt, Array = alle Zeichen
-async function loadSeaFile(){
+const SEA_FILE='data/seamarks-v2.json';   // Pfad geändert = alle Geräte laden die Zeichen einmal neu
+function seaApply(j){const ty=j.types||[];seaStatic=(j.d||[]).map(a=>{const t=ty[a[2]];return{lat:a[0],lon:a[1],g:seaGroup(t),t,n:a[3]||''};});}
+async function seaFromCache(){const c=await kv.get('sea');if(c&&c.name===SEA_FILE&&c.j){seaApply(c.j);seaTs=c.j.ts;return true;}return false;}
+let seaTs=null;
+async function seaRefresh(){   // Datei prüfen (bedingte Anfrage); nur bei neuem Stand neu einlesen
   try{
-    const r=await fetch('data/seamarks.json',{cache:'no-cache'});if(!r.ok)throw new Error(r.status);
-    const j=await r.json(),ty=j.types||[];
-    seaStatic=(j.d||[]).map(a=>{const t=ty[a[2]];return{lat:a[0],lon:a[1],g:seaGroup(t),t,n:a[3]||''};});
-  }catch(e){seaStatic=null;}
+    const r=await fetch(SEA_FILE,{cache:'no-cache'});if(!r.ok)throw new Error(r.status);
+    const j=await r.json();
+    if(seaStatic&&j.ts===seaTs)return;
+    seaApply(j);seaTs=j.ts;kv.set('sea',{name:SEA_FILE,j});
+    seaData=seaStatic;seaInfo='Zeichen aus der mitgelieferten Datei ('+seaStatic.length+')';menuInfo();paintSea();
+  }catch(e){if(!seaStatic)seaStatic=null;}
 }
 async function loadSea(){
   if(!seaVector())return;
   if(map.getZoom()<SEA_ZOOM){if(!loadSea.hinted){loadSea.hinted=true;note('Zeichen erscheinen ab Zoom 13.',false,5000);}return;}
   if(document.hidden||seaBusy)return;
-  if(seaStatic===undefined){seaBusy=true;seaInfo='Zeichen werden geladen …';menuInfo();await loadSeaFile();seaBusy=false;}
+  if(seaStatic===undefined){
+    seaBusy=true;seaInfo='Zeichen werden geladen …';menuInfo();
+    if(await seaFromCache())seaRefresh();else await seaRefresh();
+    seaBusy=false;
+  }
   if(seaStatic){seaData=seaStatic;seaInfo='Zeichen aus der mitgelieferten Datei ('+seaStatic.length+')';menuInfo();paintSea();return;}
   /* Rückfall ohne Datei: nur die eingeschalteten Arten live von Overpass abfragen („Sonstige“ an = alles) */
   const on=SEA_KEYS.filter(k=>!state.seaOff.has(k)),key=on.join(',');
@@ -1216,7 +1242,7 @@ async function loadGauges(){
       gauges.set(st.number,{number:st.number,name:title(st.longname),water:st.water?title(st.water.longname):'',km:st.km,lat:st.latitude,lon:st.longitude,
         value:m.value,unit:ts.unit||'cm',trend:m.trend,ts:Date.parse(m.timestamp),nsw:m.stateNswHsw,mnw:m.stateMnwMhw});
     }
-    gaugeLast={c:[c.lat,c.lng],r,at:Date.now()};
+    gaugeLast={c:[c.lat,c.lng],r,at:Date.now()};store.set('gauges',[...gauges.values()]);
   }catch(e){}finally{gaugeBusy=false;}
   paintGauges();
 }
@@ -1425,7 +1451,17 @@ setInterval(()=>{loadData();loadGauges();loadWays();},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
 $('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
 if(!store.get('hint',0))$('hint').hidden=false;
-paintPlace();paintChips();applySea();loadData();loadGauges();loadWays();loadNews();
+async function restoreCache(){
+  const [sh,wy]=await Promise.all([kv.get('ships'),kv.get('ways')]);
+  const gs=store.get('gauges',[]);for(const g of gs)if(g&&g.number!=null)gauges.set(g.number,g);
+  if(wy&&wy.els&&wy.box&&Date.now()-wy.at<7*864e5){const net=buildNet(wy.els);if(net.edges.length){WN=net;wver++;wState='ok';wBox=L.latLngBounds([wy.box[0],wy.box[1]],[wy.box[2],wy.box[3]]);wAt=wy.at;}}
+  if(sh&&Array.isArray(sh.ships)&&sh.ships.length&&Date.now()-sh.at<3*3600*1000&&!state.ships.size){
+    for(const x of sh.ships){x.cat=catOf(x.t);x.name=x.n||'MMSI '+x.m;state.ships.set(x.m,x);}
+    state.meta={ok:true,live:true,generated:Math.floor(sh.at/1000)};state.cacheAt=sh.at;
+  }
+}
+paintPlace();paintChips();applySea();
+Promise.race([restoreCache(),new Promise(r=>setTimeout(r,1500))]).catch(()=>{}).then(()=>{render();paintGauges();loadData();loadGauges();loadWays();loadNews();});
 </script>
 </body>
 </html>

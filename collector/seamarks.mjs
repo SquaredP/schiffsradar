@@ -1,4 +1,4 @@
-/* Holt Schifffahrtszeichen (OpenStreetMap, seamark:type) für das Gebiet aus regions.json und schreibt out/seamarks.json.
+/* Holt Schifffahrtszeichen (OpenStreetMap, seamark:type) für das Gebiet aus regions.json und schreibt out/seamarks-v2.json.
    Die Seite lädt diese Datei statt die Zeichen live von Overpass zu holen (schneller, kein Abschneiden, keine Ausfälle).
    Läuft im GitHub-Workflow, baut aber höchstens alle 7 Tage neu auf; sonst wird der letzte Stand übernommen.
 
@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(root, 'out', 'seamarks.json');
+const OUT = join(root, 'out', 'seamarks-v2.json');
 const SERVERS = process.env.OVERPASS_URL ? [process.env.OVERPASS_URL] : ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 const MAX_AGE = 7 * 864e5;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -17,7 +17,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function previous() {
   const base = (process.env.PAGES_URL || '').replace(/\/$/, '');
   if (!base) return null;
-  try { const r = await fetch(base + '/data/seamarks.json'); return r.ok ? await r.json() : null; } catch { return null; }
+  try { const r = await fetch(base + '/data/seamarks-v2.json'); return r.ok ? await r.json() : null; } catch { return null; }
 }
 async function query(q) {
   let last;

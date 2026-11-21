@@ -57,7 +57,7 @@ jobs:
           mkdir -p _site/data
           cp index.html CHANGELOG.md README.md LICENSE _site/
           cp out/ships.json _site/data/ships.json
-          if [ -f out/seamarks.json ]; then cp out/seamarks.json _site/data/seamarks.json; fi
+          if [ -f out/seamarks-v2.json ]; then cp out/seamarks-v2.json _site/data/seamarks-v2.json; fi
 
       - uses: actions/upload-pages-artifact@v3
         with:
