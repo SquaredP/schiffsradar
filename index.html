@@ -267,22 +267,24 @@ async function overpass(q){
 }
 let WN=null,wver=0,wState='lädt';   // WN: {nodes:Map(id->{ll,nb:[id]}), edges:[[idA,idB]]}
 function buildNet(els){
-  const nodes=new Map();
+  const nodes=new Map(),meta=new Map();
   for(const w of els){
     if(!w.nodes||!w.geometry||w.nodes.length!==w.geometry.length)continue;
+    const tg=w.tags||{},cm=String(tg.cemt||''),cl=/^VII/.test(cm)?7:/^VI/.test(cm)?6:/^V/.test(cm)?5:/^IV/.test(cm)?4:/^III/.test(cm)?3:0;
+    const info={n:tg.name||'',r:cl+(tg.waterway==='river'?1:0)};
     for(let i=0;i<w.nodes.length;i++){
       const g=w.geometry[i];if(!g)continue;
       const id=w.nodes[i];let n=nodes.get(id);
       if(!n){n={ll:[g.lat,g.lon],nb:[]};nodes.set(id,n);}
       if(i>0&&w.geometry[i-1]){
         const pid=w.nodes[i-1],pn=nodes.get(pid);
-        if(pn&&pid!==id){if(!n.nb.includes(pid))n.nb.push(pid);if(!pn.nb.includes(id))pn.nb.push(id);}
+        if(pn&&pid!==id){if(!n.nb.includes(pid))n.nb.push(pid);if(!pn.nb.includes(id))pn.nb.push(id);meta.set(pid<id?pid+'|'+id:id+'|'+pid,info);}
       }
     }
   }
   const edges=[];
   for(const[id,n]of nodes)for(const nb of n.nb)if(id<nb)edges.push([id,nb]);
-  return{nodes,edges};
+  return{nodes,edges,meta};
 }
 function segProj(p,a,b){
   const ky=111320,k=Math.cos(p[0]*Math.PI/180)*ky;
@@ -356,18 +358,43 @@ function polySlice(w,m1,m2){
   out.push(polyAt(w,m2));return out;
 }
 /* Dem Gewässer ab dem Schiff folgen. An Abzweigen gilt der geradeste Weg. Gibt Punkte und Wegstrecke zurück. */
+function edgeInfo(a,b){return WN.meta.get(a<b?a+'|'+b:b+'|'+a)||{n:'',r:0};}
+/* Wie weit kommt man ab dieser Kante geradeaus weiter (höchstens lim Meter)? Kurz = Sackgasse (Hafenbecken, Altarm) */
+function reachLen(prev,next,lim){
+  const nodes=WN.nodes;let D=0,cur=nodes.get(prev).ll;
+  for(let g=0;g<400&&D<lim;g++){
+    const nn=nodes.get(next).ll;D+=dist(cur,nn);
+    const brg=bearing(cur,nn);let bn=null,bd=100;
+    for(const id of nodes.get(next).nb){if(id===prev)continue;const df=angDiff(brg,bearing(nn,nodes.get(id).ll));if(df<bd){bd=df;bn=id;}}
+    if(bn==null)break;prev=next;next=bn;cur=nn;
+  }
+  return D;
+}
+/* Dem Gewässer ab dem Schiff folgen. An Abzweigen zählt: keine Sackgasse, gleicher Name (z. B. „Rhein“), höhere Wasserstraßenklasse, dann der geradeste Weg. */
 function walkNet(sn,meters){
   const nodes=WN.nodes,fade=d=>Math.max(0,1-d/1500);
   const pts=[[sn.pt[0]+sn.off[0],sn.pt[1]+sn.off[1]]],cum=[0];
   let prev=sn.fw?sn.ia:sn.ib,next=sn.fw?sn.ib:sn.ia,cur=sn.pt,D=0;
+  let curName=edgeInfo(prev,next).n;
   const push=(ll,d)=>{const f=fade(d);pts.push([ll[0]+sn.off[0]*f,ll[1]+sn.off[1]*f]);cum.push(d);};
   for(let g=0;g<5000&&D<meters;g++){
     const nn=nodes.get(next).ll,seg=dist(cur,nn);
     if(D+seg>=meters){const f=seg>0?(meters-D)/seg:0;push([cur[0]+(nn[0]-cur[0])*f,cur[1]+(nn[1]-cur[1])*f],meters);break;}
     D+=seg;push(nn,D);
-    const brg=bearing(cur,nn);let bn=null,bd=100;
-    for(const id of nodes.get(next).nb){if(id===prev)continue;const df=angDiff(brg,bearing(nn,nodes.get(id).ll));if(df<bd){bd=df;bn=id;}}
+    const brg=bearing(cur,nn),cand=[];
+    for(const id of nodes.get(next).nb){if(id===prev)continue;const df=angDiff(brg,bearing(nn,nodes.get(id).ll));if(df<100)cand.push({id,df});}
+    let bn=null;
+    if(cand.length===1)bn=cand[0].id;
+    else if(cand.length>1){
+      let bs=Infinity;
+      for(const c of cand){
+        const inf=edgeInfo(next,c.id),dead=reachLen(next,c.id,3000)<1500;
+        const sc=c.df+(dead?250:0)-(curName&&inf.n===curName?60:0)-inf.r*8;
+        if(sc<bs){bs=sc;bn=c.id;}
+      }
+    }
     if(bn==null)break;       // Sackgasse oder Ende des geladenen Gebiets
+    const inf=edgeInfo(next,bn);if(inf.n)curName=inf.n;
     prev=next;next=bn;cur=nn;
   }
   return{pts,cum};
