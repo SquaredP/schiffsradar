@@ -5,6 +5,7 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-21
 
+- Korrektur Zeichenauswahl: Die Seite fragt jetzt nur noch die eingeschalteten Arten ab (vorher alle, bei dichten Gebieten wie dem Rhein abgeschnitten, sodass einzelne Arten fehlten). Brücken, Schleusen und Wehre, die als Linie erfasst sind, erscheinen ebenfalls. Unter Zoom 13 erscheint ein Hinweis
 - Korrektur: Schiffe wurden an Abzweigen oft in Sackgassen (Hafenbecken, tote Seitenarme) geleitet. Die Seite meidet jetzt Abzweige, die nach kurzer Strecke enden, bleibt beim gleichen Gewässernamen (z. B. „Rhein“) und bevorzugt die höhere Wasserstraßenklasse. Erst danach zählt der geradeste Weg
 - Die Schiffsdaten aktualisieren sich alle 10 Sekunden (vorher 30). Doppeltippen auf die Karte zoomt eine Stufe näher, auch auf dem iPhone
 - Flussverlauf zuverlässiger: Die Seite probiert mehrere Overpass-Server nacheinander und nimmt Schiffe bis 60° neben der Flussrichtung auf. Im Schiffsblatt steht jetzt, warum ein Schiff nicht auf dem Fluss liegt (Abruf fehlgeschlagen, leer oder kein Gewässer in Fahrtrichtung)

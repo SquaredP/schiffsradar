@@ -1148,17 +1148,25 @@ function applySea(){
   else if(map.hasLayer(seaLayer)){map.removeLayer(seaLayer);seaLayer.clearLayers();}
   void none;
 }
+const SEA_RE={tonne:'buoy_.*',bake:'beacon_.*',feuer:'light.*',zeichen:'notice',bauwerk:'.*(bridge|gate|lock|weir|dam).*',hafen:'.*(berth|harbour|small_craft|mooring|anchor|marina).*'};
+let seaKey='';
 async function loadSea(){
-  if(!seaVector()||map.getZoom()<SEA_ZOOM||document.hidden||seaBusy)return;
-  if(seaBox&&seaBox.contains(map.getBounds())&&Date.now()-seaAt<600000){paintSea();return;}
+  if(!seaVector())return;
+  if(map.getZoom()<SEA_ZOOM){if(!loadSea.hinted){loadSea.hinted=true;note('Zeichen erscheinen ab Zoom 13.',false,5000);}return;}
+  if(document.hidden||seaBusy)return;
+  /* Nur die eingeschalteten Arten abfragen (kein Abschneiden bei dichten Gebieten); „Sonstige“ an = alles abfragen */
+  const on=SEA_KEYS.filter(k=>!state.seaOff.has(k)),key=on.join(',');
+  if(seaBox&&key===seaKey&&seaBox.contains(map.getBounds())&&Date.now()-seaAt<600000){paintSea();return;}
   const b=map.getBounds().pad(.3);seaBusy=true;
   try{
-    const q='[out:json][timeout:20];node["seamark:type"]('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+');out body 2000;';
+    const bb='('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+')';
+    const flt=on.includes('sonst')?'["seamark:type"]':'["seamark:type"~"^('+on.map(k=>SEA_RE[k]).join('|')+')$"]';
+    const q='[out:json][timeout:25];(node'+flt+bb+';way'+flt+bb+';);out center 6000;';
     const r=await overpass(q);
-    if(!r.ok)throw new Error(r.status);
     const j=await r.json();
-    seaData=(j.elements||[]).filter(e=>e.lat!=null).map(e=>({lat:e.lat,lon:e.lon,g:seaGroup(e.tags['seamark:type']),t:e.tags['seamark:type'],n:e.tags['seamark:name']||e.tags.name||''}));
-    seaBox=b;seaAt=Date.now();
+    seaData=(j.elements||[]).map(e=>({lat:e.lat!=null?e.lat:e.center&&e.center.lat,lon:e.lon!=null?e.lon:e.center&&e.center.lon,tg:e.tags||{}}))
+      .filter(e=>e.lat!=null&&e.lon!=null).map(e=>{const t=e.tg['seamark:type'];return{lat:e.lat,lon:e.lon,g:seaGroup(t),t,n:e.tg['seamark:name']||e.tg.name||''};});
+    seaBox=b;seaAt=Date.now();seaKey=key;
   }catch(e){note('Zeichen gerade nicht ladbar.',true,6000);}finally{seaBusy=false;}
   paintSea();
 }
