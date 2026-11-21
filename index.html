@@ -524,7 +524,7 @@ function setBase(){
 }
 setBase();dark.addEventListener('change',setBase);
 const seaTiles=L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
-  {maxZoom:19,maxNativeZoom:18,attribution:'Seezeichen: © OpenSeaMap · Pegel: © WSV · Schiffe: Open Waters AIS · aisstream.io'});
+  {maxZoom:19,maxNativeZoom:18,attribution:''});
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const markers=new Map();
 let meMarker=null,placeMarker=null,route=null;
@@ -652,7 +652,21 @@ function iconFor(s,p,sel,fav,label){
     return L.divIcon({className:'',html:span.outerHTML,iconSize:[0,0]});
   }};
 }
-let lastShown=0;
+let lastShown=0,attrCur='';
+/* Rechteinhaber nur für die Daten nennen, die gerade auf der Karte zu sehen sind */
+function paintAttrib(){
+  try{
+    const parts=[];
+    if(map.hasLayer(seaTiles))parts.push('Seezeichen: © OpenSeaMap');
+    if(gaugeLayer.getLayers().length)parts.push('Pegel: © WSV');
+    if(lastShown>0)parts.push('Schiffe: '+(state.src==='file'?'aisstream.io':'Open Waters AIS'));
+    const t=parts.join(' · ');
+    if(t===attrCur)return;
+    if(attrCur)map.attributionControl.removeAttribution(attrCur);
+    if(t)map.attributionControl.addAttribution(t);
+    attrCur=t;
+  }catch(e){}
+}
 function render(){
   const now=nowSec(),favs=favSet(),z=map.getZoom(),bounds=map.getBounds().pad(.15),sel=state.sel,gated=z<MIN_ZOOM;
   const list=[];
@@ -667,7 +681,7 @@ function render(){
   const rank=x=>(x.isSel?0:x.fav?1:isStill(x.s)?3:2);
   list.sort((a,b)=>rank(a)-rank(b)||(b.s.l||0)-(a.s.l||0));
   const seen=new Set();
-  lastShown=list.length;
+  lastShown=list.length;setTimeout(paintAttrib,0);
   if(sel){const x=list.find(y=>y.isSel);if(x&&!passes(x.s,favs))lastShown--;}
   for(const x of list.slice(0,600)){
     const{s,p,isSel,fav}=x;seen.add(s.m);
@@ -945,7 +959,7 @@ function renderFavs(){
   const body=$('shBody');body.replaceChildren();
   if(!state.favs.length){
     body.appendChild(el('p','hint','Noch kein Schiff gemerkt. Tippe auf der Karte auf ein Schiff und wähle „Merken“. Das lohnt sich bei Fähren und Ausflugsschiffen, die regelmäßig fahren, bei Schiffen, auf die du wartest, oder bei Schiffen von Freunden. Hier siehst du dann, wo sie gerade sind.'));
-    body.appendChild(newsLink());return;
+    body.append(newsLink(),aboutLink());return;
   }
   const now=nowSec();
   state.favs.forEach((f,i)=>{
@@ -969,7 +983,7 @@ function renderFavs(){
     box.append(open,rm);body.appendChild(box);
   });
   store.set('favs',state.favs);
-  body.appendChild(newsLink());
+  body.append(newsLink(),aboutLink());
 }
 
 /* ---------- Mein Ort: Vorbeifahrten und Pegel ---------- */
@@ -1141,6 +1155,7 @@ async function loadWays(){
 function applySea(){
   if(state.sea&&!map.hasLayer(seaTiles))seaTiles.addTo(map);
   if(!state.sea&&map.hasLayer(seaTiles))map.removeLayer(seaTiles);
+  paintAttrib();
 }
 
 /* ---------- Pegel auf der Karte (PEGELONLINE, WSV) ---------- */
@@ -1181,6 +1196,7 @@ function paintGauges(){
     m.on('click',()=>{gaugeSel=g;openSheet('gauge');});
     gaugeLayer.addLayer(m);
   }
+  paintAttrib();
 }
 const NSW={low:'unter Niedrigwasser',high:'über Hochwasser',normal:'normal'};
 function renderGauge(){
@@ -1252,6 +1268,27 @@ function renderNews(){
   body.appendChild(box);markNewsSeen();
 }
 function newsLink(){const b=el('button','newslink','Was ist neu?');b.type='button';b.onclick=async()=>{if(!news)await loadNews();openSheet('news');};return b;}
+function aboutLink(){const b=el('button','newslink','Über Schiffsradar');b.type='button';b.style.marginTop='0';b.onclick=()=>openSheet('about');return b;}
+function renderAbout(){
+  $('shTitle').textContent='Über Schiffsradar';
+  const body=$('shBody');body.replaceChildren();
+  const a=(t,u)=>{const x=el('a',null,t);x.href=u;x.target='_blank';x.rel='noopener noreferrer';return x;};
+  const box=el('div','newsbox');
+  box.appendChild(el('p',null,'Schiffsradar zeigt Binnen- und Küstenschiffe auf der Karte, mit Kurs, Ziel und Vorbeifahrten an deinem Ort. Es ist eine einzelne statische Seite ohne Konto und ohne Tracking. Deine Anfragen gehen direkt von deinem Gerät zu den Datenanbietern, gespeichert wird nur auf deinem Gerät.'));
+  box.appendChild(el('h3',null,'Daten und Rechteinhaber'));
+  const ul=el('ul'),li=(...n)=>{const x=el('li');x.append(...n);ul.appendChild(x);};
+  li(el('b',null,'Schiffspositionen: '),a('Open Waters AIS','https://openwaters.io/ais/'),'; als Rückfall ',a('aisstream.io','https://aisstream.io'),'. AIS-Meldungen stammen von Landstationen und Schiffen.');
+  li(el('b',null,'Grundkarte: '),'© Esri und © ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL).');
+  li(el('b',null,'Flussverlauf, Wasserwege und Ortssuche: '),'© ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL), über Overpass und Nominatim.');
+  li(el('b',null,'Schifffahrtszeichen: '),'© ',a('OpenSeaMap','https://www.openseamap.org'),'.');
+  li(el('b',null,'Pegelstände: '),'© Wasserstraßen- und Schifffahrtsverwaltung des Bundes (WSV), über ',a('PEGELONLINE','https://www.pegelonline.wsv.de'),'.');
+  box.appendChild(ul);
+  box.appendChild(el('p','hint','Unten rechts auf der Karte stehen jeweils nur die Rechteinhaber der Daten, die gerade zu sehen sind.'));
+  box.appendChild(el('h3',null,'Programm'));
+  const p=el('p');p.append('Quelltext und Lizenz (MIT): ',a('github.com/SquaredP/schiffsradar','https://github.com/SquaredP/schiffsradar'),'. Positionen sind Schätzungen und ersetzen keine Navigation.');
+  box.appendChild(p);
+  body.appendChild(box);
+}
 $('newsOpen').onclick=()=>openSheet('news');
 $('newsX').onclick=markNewsSeen;
 
@@ -1265,6 +1302,7 @@ function openSheet(kind){
   if(kind==='fav')renderFavs();
   if(kind==='find')renderFind();
   if(kind==='news')renderNews();
+  if(kind==='about')renderAbout();
   if(kind==='gauge')renderGauge();
   map.invalidateSize();paintTrack();
 }

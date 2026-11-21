@@ -5,6 +5,8 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-21
 
+- Die Rechteinhaber unten rechts auf der Karte nennen nur noch die Daten, die gerade zu sehen sind (Seezeichen, Pegel, Schiffe mit der jeweiligen Quelle). Vorher verschwanden Pegel und Schiffsquelle, sobald die Zeichen aus waren
+- Neu unter „Meine Schiffe“: „Über Schiffsradar“ mit Datenquellen, Rechteinhabern, Lizenz und Link zum Quelltext
 - „Zeichen“ ist jetzt ein einfacher Schalter: Schifffahrtszeichen (OpenSeaMap) komplett an oder aus. Die Auswahl nach Art entfällt, weil sie sich mit den fertigen Kacheln nicht zuverlässig umsetzen ließ
 - Menüs schließen sich gegenseitig: Öffnest du das Typen-Menü oben, klappt das untere Blatt (Karte, Mein Ort, Meine Schiffe, Schiffsdaten) ein, und umgekehrt
 - Zwischenspeicher im Gerät: Beim Neuladen erscheinen sofort die zuletzt gespeicherten Schiffe, Flussverläufe und Pegel. Die aktuellen Daten kommen im Hintergrund nach, bis dahin steht oben „Gespeicherter Stand von … · aktuelle Daten werden geladen …“. Flussverläufe bleiben 24 Stunden gültig und werden nicht bei jedem Neuladen neu abgefragt
