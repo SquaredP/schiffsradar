@@ -21,7 +21,7 @@ concurrency:
 jobs:
   collect-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 40
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -45,11 +45,19 @@ jobs:
           COLLECT_SECONDS: ${{ github.event_name == 'schedule' && '240' || '90' }}
           PAGES_URL: ${{ steps.pages.outputs.base_url }}
 
+      - name: Seezeichen aktualisieren (höchstens alle 7 Tage neu aufgebaut)
+        run: node collector/seamarks.mjs
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+
       - name: Seite zusammenstellen
         run: |
           mkdir -p _site/data
           cp index.html CHANGELOG.md README.md LICENSE _site/
           cp out/ships.json _site/data/ships.json
+          if [ -f out/seamarks.json ]; then cp out/seamarks.json _site/data/seamarks.json; fi
 
       - uses: actions/upload-pages-artifact@v3
         with:

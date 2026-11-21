@@ -1149,15 +1149,24 @@ function applySea(){
   void none;
 }
 const SEA_RE={tonne:'buoy_.*',bake:'beacon_.*',feuer:'light.*',zeichen:'notice',bauwerk:'.*(bridge|gate|lock|weir|dam).*',hafen:'.*(berth|harbour|small_craft|mooring|anchor|marina).*'};
-let seaKey='';
+let seaKey='',seaInfo='',seaStatic;   // seaStatic: undefined = noch nicht versucht, null = Datei fehlt, Array = alle Zeichen
+async function loadSeaFile(){
+  try{
+    const r=await fetch('data/seamarks.json',{cache:'no-cache'});if(!r.ok)throw new Error(r.status);
+    const j=await r.json(),ty=j.types||[];
+    seaStatic=(j.d||[]).map(a=>{const t=ty[a[2]];return{lat:a[0],lon:a[1],g:seaGroup(t),t,n:a[3]||''};});
+  }catch(e){seaStatic=null;}
+}
 async function loadSea(){
   if(!seaVector())return;
   if(map.getZoom()<SEA_ZOOM){if(!loadSea.hinted){loadSea.hinted=true;note('Zeichen erscheinen ab Zoom 13.',false,5000);}return;}
   if(document.hidden||seaBusy)return;
-  /* Nur die eingeschalteten Arten abfragen (kein Abschneiden bei dichten Gebieten); „Sonstige“ an = alles abfragen */
+  if(seaStatic===undefined){seaBusy=true;seaInfo='Zeichen werden geladen …';menuInfo();await loadSeaFile();seaBusy=false;}
+  if(seaStatic){seaData=seaStatic;seaInfo='Zeichen aus der mitgelieferten Datei ('+seaStatic.length+')';menuInfo();paintSea();return;}
+  /* Rückfall ohne Datei: nur die eingeschalteten Arten live von Overpass abfragen („Sonstige“ an = alles) */
   const on=SEA_KEYS.filter(k=>!state.seaOff.has(k)),key=on.join(',');
   if(seaBox&&key===seaKey&&seaBox.contains(map.getBounds())&&Date.now()-seaAt<600000){paintSea();return;}
-  const b=map.getBounds().pad(.3);seaBusy=true;
+  const b=map.getBounds().pad(.3);seaBusy=true;seaInfo='Zeichen werden von Overpass geladen …';menuInfo();
   try{
     const bb='('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+')';
     const flt=on.includes('sonst')?'["seamark:type"]':'["seamark:type"~"^('+on.map(k=>SEA_RE[k]).join('|')+')$"]';
@@ -1166,16 +1175,19 @@ async function loadSea(){
     const j=await r.json();
     seaData=(j.elements||[]).map(e=>({lat:e.lat!=null?e.lat:e.center&&e.center.lat,lon:e.lon!=null?e.lon:e.center&&e.center.lon,tg:e.tags||{}}))
       .filter(e=>e.lat!=null&&e.lon!=null).map(e=>{const t=e.tg['seamark:type'];return{lat:e.lat,lon:e.lon,g:seaGroup(t),t,n:e.tg['seamark:name']||e.tg.name||''};});
-    seaBox=b;seaAt=Date.now();seaKey=key;
-  }catch(e){note('Zeichen gerade nicht ladbar.',true,6000);}finally{seaBusy=false;}
-  paintSea();
+    seaBox=b;seaAt=Date.now();seaKey=key;seaInfo='Zeichen live von Overpass ('+seaData.length+')';
+  }catch(e){seaInfo='Overpass nicht erreichbar';note('Zeichen gerade nicht ladbar.',true,6000);}finally{seaBusy=false;}
+  menuInfo();paintSea();
 }
+function menuInfo(){const h=$('seaInfo');if(h)h.textContent=seaInfo;}
 function paintSea(){
   seaLayer.clearLayers();
   if(!seaVector()||map.getZoom()<SEA_ZOOM)return;
   const b=map.getBounds().pad(.1);
+  let cnt=0;
   for(const z of seaData){
     if(state.seaOff.has(z.g)||!b.contains([z.lat,z.lon]))continue;
+    if(++cnt>2500)break;
     const m=L.circleMarker([z.lat,z.lon],{radius:5,weight:1.5,color:cssVar('--surface')||'#fff',fillColor:SEA[z.g][1],fillOpacity:1});
     m.bindPopup(()=>{const d=el('div');d.append(el('b',null,z.n||SEA[z.g][0]),el('br'),document.createTextNode(String(z.t).replace(/_/g,' ')));return d;});
     seaLayer.addLayer(m);
@@ -1357,6 +1369,7 @@ function renderMenu(){
     lab.append(cb,dot,el('span',null,'Liegende (festgemacht, vor Anker)'));
     box.append(el('h3',null,'Zusätzlich'),lab);
   }
+  if(!isType){const si=el('p','hint',seaInfo);si.id='seaInfo';box.appendChild(si);}
   if(!isType)box.appendChild(el('p','hint','Sind alle Zeichen an, zeigt die Karte die fertigen OpenSeaMap-Symbole. Blendest du eine Art aus, werden die Zeichen ab Zoom '+SEA_ZOOM+' als farbige Punkte aus OpenStreetMap geladen (Tippen zeigt Name und Art).'));
 }
 function openMenu(kind){

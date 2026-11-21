@@ -5,6 +5,7 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-21
 
+- Zeichenfilter neu aufgebaut: Die Schifffahrtszeichen kommen jetzt als fertige Datei (data/seamarks.json) von der Seite selbst, die der Workflow aus OpenStreetMap zusammenstellt und höchstens alle 7 Tage erneuert. Der Filter nach Art läuft damit direkt auf dem Gerät, ohne Overpass-Abfrage und ohne Abschneiden. Im Menü „Zeichen“ steht, woher die Zeichen stammen. Fehlt die Datei noch (erster Lauf), fragt die Seite wie bisher live bei Overpass ab
 - Korrektur Zeichenauswahl: Die Seite fragt jetzt nur noch die eingeschalteten Arten ab (vorher alle, bei dichten Gebieten wie dem Rhein abgeschnitten, sodass einzelne Arten fehlten). Brücken, Schleusen und Wehre, die als Linie erfasst sind, erscheinen ebenfalls. Unter Zoom 13 erscheint ein Hinweis
 - Korrektur: Schiffe wurden an Abzweigen oft in Sackgassen (Hafenbecken, tote Seitenarme) geleitet. Die Seite meidet jetzt Abzweige, die nach kurzer Strecke enden, bleibt beim gleichen Gewässernamen (z. B. „Rhein“) und bevorzugt die höhere Wasserstraßenklasse. Erst danach zählt der geradeste Weg
 - Die Schiffsdaten aktualisieren sich alle 10 Sekunden (vorher 30). Doppeltippen auf die Karte zoomt eine Stufe näher, auch auf dem iPhone
