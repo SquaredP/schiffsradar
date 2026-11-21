@@ -282,16 +282,63 @@ function snapShip(s){
   if(!WN)return null;
   const c=courseOf(s);if(c==null||isStill(s))return null;
   if(s._sn&&s._sn.v===wver&&s._sn.ts===s.ts)return s._sn.r;
-  const p=[s.lat,s.lon];let best=null;
-  for(const[ia,ib]of WN.edges){
-    const a=WN.nodes.get(ia).ll,b=WN.nodes.get(ib).ll;
+  const best=snapIn(WN,s);
+  s._sn={v:wver,ts:s.ts,r:best};return best;
+}
+function snapIn(net,s){
+  const c=courseOf(s),p=[s.lat,s.lon];let best=null;
+  for(const[ia,ib]of net.edges){
+    const a=net.nodes.get(ia).ll,b=net.nodes.get(ib).ll;
     if(Math.min(a[0],b[0])>p[0]+.004||Math.max(a[0],b[0])<p[0]-.004||Math.min(a[1],b[1])>p[1]+.006||Math.max(a[1],b[1])<p[1]-.006)continue;
     const q=segProj(p,a,b);if(q.d>250)continue;
     const df=angDiff(c,bearing(a,b)),ad=Math.min(df,180-df);if(ad>45)continue;
     const sc=q.d+ad*4;
     if(!best||sc<best.sc)best={sc,ia,ib,pt:q.pt,fw:df<90,off:[p[0]-q.pt[0],p[1]-q.pt[1]]};
   }
-  s._sn={v:wver,ts:s.ts,r:best};return best;
+  return best;
+}
+/* Nächste Kante zu einem Punkt (für das Ziel), höchstens maxM entfernt */
+function nearEdge(net,p,maxM){
+  let best=null;
+  for(const[ia,ib]of net.edges){
+    const a=net.nodes.get(ia).ll,b=net.nodes.get(ib).ll;
+    if(Math.min(a[0],b[0])>p[0]+.08||Math.max(a[0],b[0])<p[0]-.08||Math.min(a[1],b[1])>p[1]+.12||Math.max(a[1],b[1])<p[1]-.12)continue;
+    const q=segProj(p,a,b);if(q.d>maxM)continue;
+    if(!best||q.d<best.d)best={d:q.d,ia,ib,pt:q.pt};
+  }
+  return best;
+}
+/* Kürzester Wasserweg vom Schiff (in Fahrtrichtung, ohne Wenden) zum Ziel: Dijkstra über das Gewässernetz */
+function routeNet(net,sn,dp){
+  const nodes=net.nodes,start=sn.fw?sn.ib:sn.ia,back=sn.fw?sn.ia:sn.ib;
+  const D=new Map(),prev=new Map(),done=new Set([back]),H=[];
+  const push=(d,id)=>{H.push([d,id]);let i=H.length-1;while(i>0){const q=(i-1)>>1;if(H[q][0]<=H[i][0])break;[H[q],H[i]]=[H[i],H[q]];i=q;}};
+  const pop=()=>{const t=H[0],l=H.pop();if(H.length){H[0]=l;let i=0;for(;;){let a=2*i+1,b=a+1,m=i;if(a<H.length&&H[a][0]<H[m][0])m=a;if(b<H.length&&H[b][0]<H[m][0])m=b;if(m===i)break;[H[m],H[i]]=[H[i],H[m]];i=m;}}return t;};
+  D.set(start,dist(sn.pt,nodes.get(start).ll));push(D.get(start),start);
+  const ex=id=>dist(nodes.get(id).ll,dp.pt);
+  let best=Infinity,bestId=null,pops=0;
+  while(H.length&&pops++<600000){
+    const[d,id]=pop();if(done.has(id))continue;
+    if(d>=best)break;
+    done.add(id);
+    if(id===dp.ia||id===dp.ib){const t=d+ex(id);if(t<best){best=t;bestId=id;}}
+    const ll=nodes.get(id).ll;
+    for(const nb of nodes.get(id).nb){
+      if(done.has(nb))continue;
+      const nd=d+dist(ll,nodes.get(nb).ll);
+      if(nd<(D.has(nb)?D.get(nb):Infinity)){D.set(nb,nd);prev.set(nb,id);push(nd,nb);}
+    }
+  }
+  if(bestId==null)return null;
+  const ids=[];for(let id=bestId;id!=null;id=prev.get(id))ids.push(id);ids.reverse();
+  const pts=[[sn.pt[0]+sn.off[0],sn.pt[1]+sn.off[1]],sn.pt].concat(ids.map(id=>nodes.get(id).ll),[dp.pt]);
+  const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+dist(pts[i-1],pts[i]));
+  return{pts,cum,len:cum[cum.length-1]};
+}
+function polySlice(w,m1,m2){
+  const out=[polyAt(w,m1)];
+  for(let i=0;i<w.pts.length;i++)if(w.cum[i]>m1&&w.cum[i]<m2)out.push(w.pts[i]);
+  out.push(polyAt(w,m2));return out;
 }
 /* Dem Gewässer ab dem Schiff folgen. An Abzweigen gilt der geradeste Weg. Gibt Punkte und Wegstrecke zurück. */
 function walkNet(sn,meters){
@@ -656,10 +703,60 @@ function paintRoute(){
   setLabel('ahead',g.ahead.length?g.ahead[g.ahead.length-1]:null,g.river?'in 30 min':'Kurs',false);
   const d=sel.dest;
   if(d&&d.ll&&dist(g.p.ll,d.ll)>500){
-    route.dest.setLatLngs([g.p.ll,d.ll]);
-    const et=etaTime(s.eta,Date.now());
-    setLabel('dest',d.ll,'Ziel '+d.name+(et&&et>Date.now()-864e5?' · '+fmtEta(et):''),true);
+    planRoute(sel);
+    const rt=sel.rt&&sel.rt.pts?sel.rt:null,v=s.sog*KN;
+    let txt='Ziel '+d.name;
+    if(rt){   // ganze Strecke auf dem Wasser, die ersten 30 Minuten kräftig
+      const m0=Math.min(rt.len,v*Math.min(g.p.age,EXTRAP_RIVER)),rem=Math.max(0,rt.len-m0);
+      const line=polyFrom(rt,m0);if(dist(line[line.length-1],d.ll)>30)line.push(d.ll);
+      route.dest.setStyle({weight:3,opacity:.75,dashArray:null});route.dest.setLatLngs(line);
+      const a2=polySlice(rt,m0,m0+v*AHEAD_RIVER);
+      route.ahead.setLatLngs(a2);route.casing.setLatLngs(a2);
+      setLabel('ahead',a2[a2.length-1],'in 30 min',false);
+      const et=etaTime(s.eta,Date.now());
+      txt+=' · '+(rem>=10000?Math.round(rem/1000):(rem/1000).toFixed(1).replace('.',','))+' km';
+      if(et&&et>Date.now()-864e5)txt+=' · '+fmtEta(et);
+      else if(v>.5)txt+=' · ca. '+fmtEta(Date.now()+rem/v*1000);
+    }else{
+      route.dest.setStyle({weight:2,opacity:.8,dashArray:'6 8'});route.dest.setLatLngs([g.p.ll,d.ll]);
+      const et=etaTime(s.eta,Date.now());
+      txt+=' · Luftlinie'+(et&&et>Date.now()-864e5?' · '+fmtEta(et):'');
+    }
+    setLabel('dest',d.ll,txt,true);
   }else{route.dest.setLatLngs([]);setLabel('dest',null);}
+}
+/* Gesamtstrecke zum Ziel planen: Gewässernetz zwischen Schiff und Ziel laden, kürzesten Weg suchen.
+   Neu geplant wird bei jeder neuen Meldung des Schiffs. */
+let RN=null,RNbox=null;
+async function loadRouteNet(a,b){
+  const S=Math.min(a[0],b[0])-.2,N=Math.max(a[0],b[0])+.2,W=Math.min(a[1],b[1])-.3,E=Math.max(a[1],b[1])+.3;
+  const area=(N-S)*(E-W)*Math.cos((S+N)*Math.PI/360);
+  if(area>40)return null;
+  if(RN&&RNbox&&RNbox[0]<=S&&RNbox[1]<=W&&RNbox[2]>=N&&RNbox[3]>=E)return RN;
+  const filt=area>3?'["cemt"~"^(III|IV|Va|Vb|VIa|VIb|VIc|VII|[3-7])"]':'';   // große Gebiete: nur Wasserstraßen mit Klasseneinstufung
+  const q='[out:json][timeout:60];way["waterway"~"^(river|canal)$"]'+filt+'('+[S,W,N,E].map(x=>x.toFixed(4)).join(',')+');out geom;';
+  const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+  if(!r.ok)throw new Error(r.status);
+  RN=buildNet((await r.json()).elements||[]);RNbox=[S,W,N,E];return RN;
+}
+async function planRoute(sel){
+  const s=state.ships.get(sel.m),d=sel.dest;
+  if(!s||!d||!d.ll||sel.rtBusy||isStill(s)||courseOf(s)==null)return;
+  const rt=sel.rt;
+  if(rt&&rt.ts===s.ts&&!(rt.err&&Date.now()-rt.at>120000))return;
+  sel.rtBusy=true;
+  let res={ts:s.ts,at:Date.now(),fail:true};
+  try{
+    const net=await loadRouteNet([s.lat,s.lon],d.ll);
+    if(net&&net.edges.length){
+      const sn=snapIn(net,s),dp=nearEdge(net,d.ll,10000);
+      const w=sn&&dp?routeNet(net,sn,dp):null;
+      if(w&&w.len>0)res={ts:s.ts,at:Date.now(),pts:w.pts,cum:w.cum,len:w.len};
+    }
+  }catch(e){res.err=true;}
+  sel.rtBusy=false;
+  if(state.sel!==sel)return;
+  sel.rt=res;paintRoute();
 }
 function fmtEta(t){
   const d=new Date(t),today=new Date();
@@ -668,7 +765,8 @@ function fmtEta(t){
 function showRoute(){
   const sel=state.sel,s=sel&&state.ships.get(sel.m);if(!s)return;
   const g=routeGeometry(s,nowSec()),pts=g.wake.concat(g.ahead);
-  if(sel.dest&&sel.dest.ll&&dist(g.p.ll,sel.dest.ll)<400000)pts.push(sel.dest.ll);
+  if(sel.rt&&sel.rt.pts)pts.push(...sel.rt.pts);
+  else if(sel.dest&&sel.dest.ll&&dist(g.p.ll,sel.dest.ll)<400000)pts.push(sel.dest.ll);
   if(pts.length<2)return;
   sel.follow=false;const fb=$('followBtn');if(fb)fb.setAttribute('aria-pressed','false');
   const sh=$('sheet'),pad=sh&&!sh.hidden?Math.min(sh.offsetHeight,innerHeight*.6):0;
