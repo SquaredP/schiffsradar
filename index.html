@@ -182,7 +182,7 @@ nav button[aria-current="true"]{color:var(--fg);border-top-color:var(--fg)}
     </div>
     <div class="chips" id="chips">
       <button class="chip" id="typeBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="typeTxt">Typen</span> ▾</button>
-      <button class="chip" id="nameBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="nameTxt">Zeichen</span> ▾</button>
+      <button class="chip c-sonst" id="seaChip" type="button" aria-pressed="true"><i></i>Zeichen</button>
       <button class="chip c-pegel" id="pegelChip" type="button"><i></i>Pegel</button>
       <input class="lineq" id="shipQ" type="search" placeholder="Name oder MMSI" enterkeyhint="search" autocomplete="off" aria-label="Nach Schiffsname oder MMSI filtern">
     </div>
@@ -496,7 +496,7 @@ function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className
 const nowSec=()=>Date.now()/1000;
 
 const state={
-  cats:new Set(store.get('cats',CAT_ORDER)),seaOff:new Set(store.get('seaoff',[])),pegel:store.get('pegel',true),
+  cats:new Set(store.get('cats',CAT_ORDER)),sea:store.get('sea',true),pegel:store.get('pegel',true),
   still:store.get('still',false),
   place:store.get('place',null),
   favs:store.get('favs',[]),
@@ -1137,87 +1137,10 @@ async function loadWays(){
   render();
 }
 
-/* ---------- Schifffahrtszeichen ausblenden (nach Art) ----------
-   Alle an: fertige OpenSeaMap-Kacheln (schön, aber nicht filterbar).
-   Sobald eine Art aus ist: Zeichen kommen als Punkte aus OpenStreetMap (Overpass) und lassen sich nach Art filtern. */
-const SEA={tonne:['Tonnen','#d6453d'],bake:['Baken','#2e9e50'],feuer:['Feuer · Leuchttürme','#e0b000'],zeichen:['Tafeln · Binnenzeichen','#2c6fb5'],
-  bauwerk:['Brücken · Schleusen · Wehre','#6b7780'],hafen:['Häfen · Anlegestellen','#1a8f8f'],sonst:['Sonstige','#8a63b8']};
-const SEA_KEYS=Object.keys(SEA),SEA_ZOOM=13;
-function seaGroup(t){
-  t=String(t||'');
-  if(/^light/.test(t))return 'feuer';
-  if(/^buoy_/.test(t))return 'tonne';
-  if(/^beacon_/.test(t))return 'bake';
-  if(t==='notice')return 'zeichen';
-  if(/bridge|gate|lock|weir|dam/.test(t))return 'bauwerk';
-  if(/berth|harbour|small_craft|mooring|anchor|marina/.test(t))return 'hafen';
-  return 'sonst';
-}
-const seaLayer=L.layerGroup();
-let seaData=[],seaBox=null,seaAt=0,seaBusy=false;
-const seaVector=()=>state.seaOff.size>0&&state.seaOff.size<SEA_KEYS.length;
+/* ---------- Schifffahrtszeichen: ein Schalter, fertige OpenSeaMap-Kacheln ---------- */
 function applySea(){
-  const all=state.seaOff.size===0,none=state.seaOff.size===SEA_KEYS.length;
-  if(all&&!map.hasLayer(seaTiles))seaTiles.addTo(map);
-  if(!all&&map.hasLayer(seaTiles))map.removeLayer(seaTiles);
-  if(seaVector()){if(!map.hasLayer(seaLayer))seaLayer.addTo(map);loadSea();}
-  else if(map.hasLayer(seaLayer)){map.removeLayer(seaLayer);seaLayer.clearLayers();}
-  void none;
-}
-const SEA_RE={tonne:'buoy_.*',bake:'beacon_.*',feuer:'light.*',zeichen:'notice',bauwerk:'.*(bridge|gate|lock|weir|dam).*',hafen:'.*(berth|harbour|small_craft|mooring|anchor|marina).*'};
-let seaKey='',seaInfo='',seaStatic;   // seaStatic: undefined = noch nicht versucht, null = Datei fehlt, Array = alle Zeichen
-const SEA_FILE='data/seamarks-v2.json';   // Pfad geändert = alle Geräte laden die Zeichen einmal neu
-function seaApply(j){const ty=j.types||[];seaStatic=(j.d||[]).map(a=>{const t=ty[a[2]];return{lat:a[0],lon:a[1],g:seaGroup(t),t,n:a[3]||''};});}
-async function seaFromCache(){const c=await kv.get('sea');if(c&&c.name===SEA_FILE&&c.j){seaApply(c.j);seaTs=c.j.ts;return true;}return false;}
-let seaTs=null;
-async function seaRefresh(){   // Datei prüfen (bedingte Anfrage); nur bei neuem Stand neu einlesen
-  try{
-    const r=await fetch(SEA_FILE,{cache:'no-cache'});if(!r.ok)throw new Error(r.status);
-    const j=await r.json();
-    if(seaStatic&&j.ts===seaTs)return;
-    seaApply(j);seaTs=j.ts;kv.set('sea',{name:SEA_FILE,j});
-    seaData=seaStatic;seaInfo='Zeichen aus der mitgelieferten Datei ('+seaStatic.length+')';menuInfo();paintSea();
-  }catch(e){if(!seaStatic)seaStatic=null;}
-}
-async function loadSea(){
-  if(!seaVector())return;
-  if(map.getZoom()<SEA_ZOOM){if(!loadSea.hinted){loadSea.hinted=true;note('Zeichen erscheinen ab Zoom 13.',false,5000);}return;}
-  if(document.hidden||seaBusy)return;
-  if(seaStatic===undefined){
-    seaBusy=true;seaInfo='Zeichen werden geladen …';menuInfo();
-    if(await seaFromCache())seaRefresh();else await seaRefresh();
-    seaBusy=false;
-  }
-  if(seaStatic){seaData=seaStatic;seaInfo='Zeichen aus der mitgelieferten Datei ('+seaStatic.length+')';menuInfo();paintSea();return;}
-  /* Rückfall ohne Datei: nur die eingeschalteten Arten live von Overpass abfragen („Sonstige“ an = alles) */
-  const on=SEA_KEYS.filter(k=>!state.seaOff.has(k)),key=on.join(',');
-  if(seaBox&&key===seaKey&&seaBox.contains(map.getBounds())&&Date.now()-seaAt<600000){paintSea();return;}
-  const b=map.getBounds().pad(.3);seaBusy=true;seaInfo='Zeichen werden von Overpass geladen …';menuInfo();
-  try{
-    const bb='('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+')';
-    const flt=on.includes('sonst')?'["seamark:type"]':'["seamark:type"~"^('+on.map(k=>SEA_RE[k]).join('|')+')$"]';
-    const q='[out:json][timeout:25];(node'+flt+bb+';way'+flt+bb+';);out center 6000;';
-    const r=await overpass(q);
-    const j=await r.json();
-    seaData=(j.elements||[]).map(e=>({lat:e.lat!=null?e.lat:e.center&&e.center.lat,lon:e.lon!=null?e.lon:e.center&&e.center.lon,tg:e.tags||{}}))
-      .filter(e=>e.lat!=null&&e.lon!=null).map(e=>{const t=e.tg['seamark:type'];return{lat:e.lat,lon:e.lon,g:seaGroup(t),t,n:e.tg['seamark:name']||e.tg.name||''};});
-    seaBox=b;seaAt=Date.now();seaKey=key;seaInfo='Zeichen live von Overpass ('+seaData.length+')';
-  }catch(e){seaInfo='Overpass nicht erreichbar';note('Zeichen gerade nicht ladbar.',true,6000);}finally{seaBusy=false;}
-  menuInfo();paintSea();
-}
-function menuInfo(){const h=$('seaInfo');if(h)h.textContent=seaInfo;}
-function paintSea(){
-  seaLayer.clearLayers();
-  if(!seaVector()||map.getZoom()<SEA_ZOOM)return;
-  const b=map.getBounds().pad(.1);
-  let cnt=0;
-  for(const z of seaData){
-    if(state.seaOff.has(z.g)||!b.contains([z.lat,z.lon]))continue;
-    if(++cnt>2500)break;
-    const m=L.circleMarker([z.lat,z.lon],{radius:5,weight:1.5,color:cssVar('--surface')||'#fff',fillColor:SEA[z.g][1],fillOpacity:1});
-    m.bindPopup(()=>{const d=el('div');d.append(el('b',null,z.n||SEA[z.g][0]),el('br'),document.createTextNode(String(z.t).replace(/_/g,' ')));return d;});
-    seaLayer.addLayer(m);
-  }
+  if(state.sea&&!map.hasLayer(seaTiles))seaTiles.addTo(map);
+  if(!state.sea&&map.hasLayer(seaTiles))map.removeLayer(seaTiles);
 }
 
 /* ---------- Pegel auf der Karte (PEGELONLINE, WSV) ---------- */
@@ -1334,6 +1257,7 @@ $('newsX').onclick=markNewsSeen;
 
 /* ---------- Blatt und Reiter ---------- */
 function openSheet(kind){
+  closeMenu();
   state.sheet=kind;$('sheet').hidden=false;$('shBadge').hidden=true;
   if(kind==='ship')renderShipSheet();
   if(kind==='pass')renderPass();
@@ -1362,32 +1286,30 @@ $('placeBtn').onclick=()=>{setTab('pass',true);openSheet('place');};
 function paintChips(){
   const n=state.cats.size,k=CAT_ORDER.length;
   $('typeTxt').textContent=(n===k?'Alle Typen':n?n+' von '+k+' Typen':'Keine Typen')+(state.still?' + liegende':'');
-  const h=SEA_KEYS.length-state.seaOff.size;
-  $('nameTxt').textContent=h===SEA_KEYS.length?'Zeichen':h?'Zeichen '+h+'/'+SEA_KEYS.length:'Zeichen aus';
+  $('seaChip').setAttribute('aria-pressed',String(state.sea));
   $('pegelChip').setAttribute('aria-pressed',String(state.pegel));
 }
 /* Aufklappmenüs: „Typen“ (welche Schiffe) und „Namen“ (bei welchen Typen das Namensschild steht) */
 let menuKind=null;
-function closeMenu(){menuKind=null;$('menu').hidden=true;$('typeBtn').setAttribute('aria-expanded','false');$('nameBtn').setAttribute('aria-expanded','false');}
+function closeMenu(){menuKind=null;$('menu').hidden=true;$('typeBtn').setAttribute('aria-expanded','false');}
 function renderMenu(){
-  const box=$('menu'),isType=menuKind==='type',keys=isType?CAT_ORDER:SEA_KEYS;
+  const box=$('menu'),isType=true,keys=CAT_ORDER;
   box.replaceChildren(el('h3',null,isType?'Diese Schiffstypen zeigen':'Diese Zeichen zeigen'));
   const all=el('div','all'),a1=el('button',null,'Alle'),a2=el('button',null,'Keine');a1.type=a2.type='button';
-  const save=()=>{if(isType)store.set('cats',[...state.cats]);else{store.set('seaoff',[...state.seaOff]);applySea();paintSea();}};
+  const save=()=>store.set('cats',[...state.cats]);
   const setAll=on=>{
-    if(isType)state.cats=new Set(on?CAT_ORDER:[]);else state.seaOff=new Set(on?[]:SEA_KEYS);
+    state.cats=new Set(on?CAT_ORDER:[]);
     save();paintChips();renderMenu();render();paintPass(true);
   };
   a1.onclick=()=>setAll(true);a2.onclick=()=>setAll(false);all.append(a1,a2);box.appendChild(all);
   for(const k of keys){
     const lab=el('label',isType?'c-'+k:''),cb=el('input'),dot=el('i');cb.type='checkbox';
-    if(!isType)dot.style.background=SEA[k][1];
-    cb.checked=isType?state.cats.has(k):!state.seaOff.has(k);
+    cb.checked=state.cats.has(k);
     cb.onchange=()=>{
-      if(isType)cb.checked?state.cats.add(k):state.cats.delete(k);else cb.checked?state.seaOff.delete(k):state.seaOff.add(k);
+      cb.checked?state.cats.add(k):state.cats.delete(k);
       save();paintChips();render();paintPass(true);
     };
-    lab.append(cb,dot,el('span',null,isType?CATS[k]:SEA[k][0]));box.appendChild(lab);
+    lab.append(cb,dot,el('span',null,CATS[k]));box.appendChild(lab);
   }
   if(isType){
     const lab=el('label'),cb=el('input'),dot=el('i','ring');cb.type='checkbox';cb.checked=state.still;
@@ -1395,21 +1317,20 @@ function renderMenu(){
     lab.append(cb,dot,el('span',null,'Liegende (festgemacht, vor Anker)'));
     box.append(el('h3',null,'Zusätzlich'),lab);
   }
-  if(!isType){const si=el('p','hint',seaInfo);si.id='seaInfo';box.appendChild(si);}
-  if(!isType)box.appendChild(el('p','hint','Sind alle Zeichen an, zeigt die Karte die fertigen OpenSeaMap-Symbole. Blendest du eine Art aus, werden die Zeichen ab Zoom '+SEA_ZOOM+' als farbige Punkte aus OpenStreetMap geladen (Tippen zeigt Name und Art).'));
 }
 function openMenu(kind){
   if(menuKind===kind){closeMenu();return;}
+  if(state.sheet)closeSheet();
   menuKind=kind;renderMenu();$('menu').hidden=false;
-  $('typeBtn').setAttribute('aria-expanded',String(kind==='type'));$('nameBtn').setAttribute('aria-expanded',String(kind==='sea'));
+  $('typeBtn').setAttribute('aria-expanded',String(kind==='type'));
 }
 /* composedPath statt closest: „Alle/Keine“ baut das Menü neu, das angeklickte Element ist dann schon abgehängt */
-document.addEventListener('click',e=>{if(menuKind&&!e.composedPath().some(n=>n.id==='menu'||n.id==='typeBtn'||n.id==='nameBtn'))closeMenu();});
+document.addEventListener('click',e=>{if(menuKind&&!e.composedPath().some(n=>n.id==='menu'||n.id==='typeBtn'))closeMenu();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu();});
 $('chips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
   if(c.id==='typeBtn')return openMenu('type');
-  if(c.id==='nameBtn')return openMenu('sea');
+  if(c.id==='seaChip'){state.sea=!state.sea;store.set('sea',state.sea);applySea();}
   if(c.id==='pegelChip'){state.pegel=!state.pegel;store.set('pegel',state.pegel);if(state.pegel)loadGauges();paintGauges();}
   paintChips();render();paintPass(true);
 });
@@ -1443,7 +1364,7 @@ let moveT=null;
     }else last={t,p};
   });
   map.on('dblclick',e=>map.setZoomAround(e.containerPoint,Math.min(map.getMaxZoom()||19,map.getZoom()+1)));}
-map.on('zoomend',()=>{paintGauges();paintSea();});
+map.on('zoomend',()=>{paintGauges();});
 map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadSea();loadWays();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);

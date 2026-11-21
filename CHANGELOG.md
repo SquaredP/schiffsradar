@@ -5,10 +5,9 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-21
 
-- Zwischenspeicher im Gerät: Beim Neuladen erscheinen sofort die zuletzt gespeicherten Schiffe, Flussverläufe, Zeichen und Pegel. Die aktuellen Daten kommen im Hintergrund nach, bis dahin steht oben „Gespeicherter Stand von … · aktuelle Daten werden geladen …“. Flussverläufe bleiben 24 Stunden gültig und werden nicht bei jedem Neuladen neu abgefragt
-- Die Zeichendatei hat einen neuen Pfad (data/seamarks-v2.json). Alle Geräte laden sie dadurch einmal komplett neu, der Workflow baut sie neu auf
-- Zeichenfilter neu aufgebaut: Die Schifffahrtszeichen kommen jetzt als fertige Datei (data/seamarks.json) von der Seite selbst, die der Workflow aus OpenStreetMap zusammenstellt und höchstens alle 7 Tage erneuert. Der Filter nach Art läuft damit direkt auf dem Gerät, ohne Overpass-Abfrage und ohne Abschneiden. Im Menü „Zeichen“ steht, woher die Zeichen stammen. Fehlt die Datei noch (erster Lauf), fragt die Seite wie bisher live bei Overpass ab
-- Korrektur Zeichenauswahl: Die Seite fragt jetzt nur noch die eingeschalteten Arten ab (vorher alle, bei dichten Gebieten wie dem Rhein abgeschnitten, sodass einzelne Arten fehlten). Brücken, Schleusen und Wehre, die als Linie erfasst sind, erscheinen ebenfalls. Unter Zoom 13 erscheint ein Hinweis
+- „Zeichen“ ist jetzt ein einfacher Schalter: Schifffahrtszeichen (OpenSeaMap) komplett an oder aus. Die Auswahl nach Art entfällt, weil sie sich mit den fertigen Kacheln nicht zuverlässig umsetzen ließ
+- Menüs schließen sich gegenseitig: Öffnest du das Typen-Menü oben, klappt das untere Blatt (Karte, Mein Ort, Meine Schiffe, Schiffsdaten) ein, und umgekehrt
+- Zwischenspeicher im Gerät: Beim Neuladen erscheinen sofort die zuletzt gespeicherten Schiffe, Flussverläufe und Pegel. Die aktuellen Daten kommen im Hintergrund nach, bis dahin steht oben „Gespeicherter Stand von … · aktuelle Daten werden geladen …“. Flussverläufe bleiben 24 Stunden gültig und werden nicht bei jedem Neuladen neu abgefragt
 - Korrektur: Schiffe wurden an Abzweigen oft in Sackgassen (Hafenbecken, tote Seitenarme) geleitet. Die Seite meidet jetzt Abzweige, die nach kurzer Strecke enden, bleibt beim gleichen Gewässernamen (z. B. „Rhein“) und bevorzugt die höhere Wasserstraßenklasse. Erst danach zählt der geradeste Weg
 - Die Schiffsdaten aktualisieren sich alle 10 Sekunden (vorher 30). Doppeltippen auf die Karte zoomt eine Stufe näher, auch auf dem iPhone
 - Flussverlauf zuverlässiger: Die Seite probiert mehrere Overpass-Server nacheinander und nimmt Schiffe bis 60° neben der Flussrichtung auf. Im Schiffsblatt steht jetzt, warum ein Schiff nicht auf dem Fluss liegt (Abruf fehlgeschlagen, leer oder kein Gewässer in Fahrtrichtung)
@@ -20,7 +19,6 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 - Pegel auf der Karte: Pegelstand in cm direkt am Messort (ab Zoom 10), Tippen zeigt Tendenz und Stand, „Als Mein Ort“ übernimmt den Pegel. Mit dem Chip „Pegel“ ein- und ausschaltbar
 - Schiffstypen als aufklappendes Menü statt einzelner Chips
-- Schifffahrtszeichen nach Art ausblenden (Tonnen, Baken, Feuer, Tafeln, Brücken und Schleusen, Häfen) über das Menü „Zeichen“
 
 - Schiffe erscheinen erst ab Zoom 11 (ca. 20 km Umkreis) und werden nur für den sichtbaren Ausschnitt direkt auf dein Gerät geladen, keine Massenabfrage mehr
 - Hinweis beim ersten Öffnen zum Zoom-Level
