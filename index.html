@@ -15,7 +15,7 @@
 :root{
   --bg:#f2f5f6; --surface:#ffffff; --line:#d3dbde; --fg:#152024; --muted:#5a6a70;
   --fracht:#1f64a8; --tanker:#b23a2e; --fahrgast:#1f8a4c; --dienst:#b86f06; --sonst:#7656a8;
-  --late:#c8202f; --ontime:#1f8a4c; --focus:#0b6bcb;
+  --late:#c8202f; --ontime:#1f8a4c; --focus:#0b6bcb; --pegel:#0a7e8c;
   --ui:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   --sign:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   color-scheme:light;
@@ -23,7 +23,7 @@
 @media (prefers-color-scheme:dark){:root{
   --bg:#13181c; --surface:#1c2328; --line:#323c42; --fg:#e8eef0; --muted:#97a6ab;
   --fracht:#78b4ee; --tanker:#f0796c; --fahrgast:#55c486; --dienst:#e5a84a; --sonst:#b89ce2;
-  --late:#f0616c; --ontime:#55c486; --focus:#7db8f5; color-scheme:dark;
+  --late:#f0616c; --ontime:#55c486; --focus:#7db8f5; --pegel:#4cc3d1; color-scheme:dark;
 }}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -58,6 +58,20 @@ a{color:var(--focus)}
 .chip[aria-pressed="false"]{color:var(--muted)}
 .chip.still{--c:var(--muted)}
 .chip.still i{border-radius:50%;background:none;border:2px solid var(--c)}
+.chip[aria-expanded="true"]{border-color:var(--fg)}
+.menu{max-height:60dvh;overflow-y:auto;align-self:flex-start;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.22);padding:6px 4px;min-width:220px}
+.menu h3{margin:4px 10px 2px;font:600 12px/1.2 var(--ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.menu label{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer}
+.menu label i{width:12px;height:12px;border-radius:50%;background:var(--c)}
+.menu input{width:18px;height:18px;margin:0}
+.menu .hint{margin:4px 10px 6px;font-size:12px;max-width:260px}
+.menu .all{display:flex;gap:8px;padding:4px 10px 6px}
+.menu .all button{background:none;border:0;padding:4px 0;color:var(--focus);font-weight:500}
+.pgm{position:absolute;left:0;top:0}
+.pgm span{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;background:var(--surface);color:var(--fg);border:1.5px solid var(--pegel);
+  border-radius:4px;padding:2px 5px;font:700 12px/1 var(--sign);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.pgm span::before{content:"";width:7px;height:7px;background:var(--pegel);transform:rotate(45deg);flex:none}
+.pgm span.dot{padding:4px}.pgm span.dot::before{margin:0}
 .lineq{flex:none;width:130px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 11px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
 .status{align-self:flex-start;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:12px;color:var(--muted)}
 .status.err{color:var(--late);border-color:var(--late)}
@@ -86,6 +100,7 @@ a{color:var(--focus)}
 .sm.old b{background:var(--surface);color:var(--c);border:1.5px dashed var(--c)}
 .sm.sel::before{content:"";position:absolute;left:-17px;top:-17px;width:34px;height:34px;border-radius:50%;border:3px solid var(--focus);box-sizing:border-box}
 .sm.sel b{font-size:14px;z-index:2}
+.c-pegel{--c:var(--pegel)}
 .c-fracht{--c:var(--fracht)} .c-tanker{--c:var(--tanker)} .c-fahrgast{--c:var(--fahrgast)} .c-dienst{--c:var(--dienst)} .c-sonst{--c:var(--sonst)}
 @media (prefers-color-scheme:dark){.sm b{color:#101416}}
 .rlab{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.18);
@@ -165,14 +180,13 @@ nav button[aria-current="true"]{color:var(--fg);border-top-color:var(--fg)}
       </button>
     </div>
     <div class="chips" id="chips">
-      <button class="chip c-fracht" data-cat="fracht" type="button"><i></i>Fracht</button>
-      <button class="chip c-tanker" data-cat="tanker" type="button"><i></i>Tanker</button>
-      <button class="chip c-fahrgast" data-cat="fahrgast" type="button"><i></i>Fahrgast</button>
-      <button class="chip c-dienst" data-cat="dienst" type="button"><i></i>Dienst · Schlepper</button>
-      <button class="chip c-sonst" data-cat="sonst" type="button"><i></i>Sport · Sonstige</button>
+      <button class="chip" id="typeBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="typeTxt">Typen</span> ▾</button>
+      <button class="chip" id="nameBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="nameTxt">Zeichen</span> ▾</button>
+      <button class="chip c-pegel" id="pegelChip" type="button"><i></i>Pegel</button>
       <button class="chip still" id="stillChip" type="button"><i></i>Liegende</button>
       <input class="lineq" id="shipQ" type="search" placeholder="Name oder MMSI" enterkeyhint="search" autocomplete="off" aria-label="Nach Schiffsname oder MMSI filtern">
     </div>
+    <div class="menu" id="menu" hidden></div>
     <div class="status num" id="status" role="status">Lade Schiffe …</div>
     <div class="news" id="hint" hidden><button id="hintOpen" type="button"><b>Hinweis: </b>Schiffe erscheinen ab Zoom 11 (ca. 20 km Umkreis) und werden nur für den sichtbaren Ausschnitt geladen.</button><button class="nx" id="hintX" type="button" aria-label="Hinweis schließen">×</button></div>
     <div class="news" id="news" hidden><button id="newsOpen" type="button"></button><button class="nx" id="newsX" type="button" aria-label="Hinweis schließen">×</button></div>
@@ -309,7 +323,7 @@ function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className
 const nowSec=()=>Date.now()/1000;
 
 const state={
-  cats:new Set(store.get('cats',CAT_ORDER)),
+  cats:new Set(store.get('cats',CAT_ORDER)),seaOff:new Set(store.get('seaoff',[])),pegel:store.get('pegel',true),
   still:store.get('still',false),
   place:store.get('place',null),
   favs:store.get('favs',[]),
@@ -336,8 +350,8 @@ function setBase(){
   base.eachLayer(l=>l.bringToBack());
 }
 setBase();dark.addEventListener('change',setBase);
-L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
-  {maxZoom:19,maxNativeZoom:18,attribution:'Seezeichen: © OpenSeaMap · Schiffe: Open Waters AIS · aisstream.io'}).addTo(map);
+const seaTiles=L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+  {maxZoom:19,maxNativeZoom:18,attribution:'Seezeichen: © OpenSeaMap · Pegel: © WSV · Schiffe: Open Waters AIS · aisstream.io'});
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const markers=new Map();
 let meMarker=null,placeMarker=null,route=null;
@@ -861,6 +875,119 @@ async function nameFromMap(c){
   }catch(e){}
 }
 
+
+/* ---------- Schifffahrtszeichen ausblenden (nach Art) ----------
+   Alle an: fertige OpenSeaMap-Kacheln (schön, aber nicht filterbar).
+   Sobald eine Art aus ist: Zeichen kommen als Punkte aus OpenStreetMap (Overpass) und lassen sich nach Art filtern. */
+const SEA={tonne:['Tonnen','#d6453d'],bake:['Baken','#2e9e50'],feuer:['Feuer · Leuchttürme','#e0b000'],zeichen:['Tafeln · Binnenzeichen','#2c6fb5'],
+  bauwerk:['Brücken · Schleusen · Wehre','#6b7780'],hafen:['Häfen · Anlegestellen','#1a8f8f'],sonst:['Sonstige','#8a63b8']};
+const SEA_KEYS=Object.keys(SEA),SEA_ZOOM=13;
+function seaGroup(t){
+  t=String(t||'');
+  if(/^light/.test(t))return 'feuer';
+  if(/^buoy_/.test(t))return 'tonne';
+  if(/^beacon_/.test(t))return 'bake';
+  if(t==='notice')return 'zeichen';
+  if(/bridge|gate|lock|weir|dam/.test(t))return 'bauwerk';
+  if(/berth|harbour|small_craft|mooring|anchor|marina/.test(t))return 'hafen';
+  return 'sonst';
+}
+const seaLayer=L.layerGroup();
+let seaData=[],seaBox=null,seaAt=0,seaBusy=false;
+const seaVector=()=>state.seaOff.size>0&&state.seaOff.size<SEA_KEYS.length;
+function applySea(){
+  const all=state.seaOff.size===0,none=state.seaOff.size===SEA_KEYS.length;
+  if(all&&!map.hasLayer(seaTiles))seaTiles.addTo(map);
+  if(!all&&map.hasLayer(seaTiles))map.removeLayer(seaTiles);
+  if(seaVector()){if(!map.hasLayer(seaLayer))seaLayer.addTo(map);loadSea();}
+  else if(map.hasLayer(seaLayer)){map.removeLayer(seaLayer);seaLayer.clearLayers();}
+  void none;
+}
+async function loadSea(){
+  if(!seaVector()||map.getZoom()<SEA_ZOOM||document.hidden||seaBusy)return;
+  if(seaBox&&seaBox.contains(map.getBounds())&&Date.now()-seaAt<600000){paintSea();return;}
+  const b=map.getBounds().pad(.3);seaBusy=true;
+  try{
+    const q='[out:json][timeout:20];node["seamark:type"]('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+');out body 2000;';
+    const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+    if(!r.ok)throw new Error(r.status);
+    const j=await r.json();
+    seaData=(j.elements||[]).filter(e=>e.lat!=null).map(e=>({lat:e.lat,lon:e.lon,g:seaGroup(e.tags['seamark:type']),t:e.tags['seamark:type'],n:e.tags['seamark:name']||e.tags.name||''}));
+    seaBox=b;seaAt=Date.now();
+  }catch(e){note('Zeichen gerade nicht ladbar.',true,6000);}finally{seaBusy=false;}
+  paintSea();
+}
+function paintSea(){
+  seaLayer.clearLayers();
+  if(!seaVector()||map.getZoom()<SEA_ZOOM)return;
+  const b=map.getBounds().pad(.1);
+  for(const z of seaData){
+    if(state.seaOff.has(z.g)||!b.contains([z.lat,z.lon]))continue;
+    const m=L.circleMarker([z.lat,z.lon],{radius:5,weight:1.5,color:cssVar('--surface')||'#fff',fillColor:SEA[z.g][1],fillOpacity:1});
+    m.bindPopup(()=>{const d=el('div');d.append(el('b',null,z.n||SEA[z.g][0]),el('br'),document.createTextNode(String(z.t).replace(/_/g,' ')));return d;});
+    seaLayer.addLayer(m);
+  }
+}
+
+/* ---------- Pegel auf der Karte (PEGELONLINE, WSV) ---------- */
+const PEGEL_ZOOM=10;
+const gauges=new Map(),gaugeLayer=L.layerGroup().addTo(map);
+let gaugeLast=null,gaugeBusy=false,gaugeSel=null;
+const TREND={'1':'steigend','0':'gleichbleibend','-1':'fallend'},TREND_ARROW={'1':'↗','0':'→','-1':'↘'};
+async function loadGauges(){
+  if(!state.pegel||map.getZoom()<PEGEL_ZOOM||document.hidden||gaugeBusy)return;
+  const b=map.getBounds(),c=map.getCenter(),rv=dist([b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()])/2000;
+  if(gaugeLast&&Date.now()-gaugeLast.at<300000&&dist([c.lat,c.lng],gaugeLast.c)/1000+rv<=gaugeLast.r){paintGauges();return;}
+  const r=Math.min(100,Math.ceil(rv*1.4));
+  gaugeBusy=true;
+  try{
+    const u='https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations.json?latitude='+c.lat.toFixed(4)+'&longitude='+c.lng.toFixed(4)+
+      '&radius='+r+'&includeTimeseries=true&includeCurrentMeasurement=true&timeseries=W';
+    const res=await fetch(u);if(!res.ok)throw new Error(res.status);
+    for(const st of await res.json()){
+      const ts=(st.timeseries||[]).find(t=>t.shortname==='W'&&t.currentMeasurement);
+      if(!ts||st.latitude==null)continue;
+      const m=ts.currentMeasurement;
+      gauges.set(st.number,{number:st.number,name:title(st.longname),water:st.water?title(st.water.longname):'',km:st.km,lat:st.latitude,lon:st.longitude,
+        value:m.value,unit:ts.unit||'cm',trend:m.trend,ts:Date.parse(m.timestamp),nsw:m.stateNswHsw,mnw:m.stateMnwMhw});
+    }
+    gaugeLast={c:[c.lat,c.lng],r,at:Date.now()};
+  }catch(e){}finally{gaugeBusy=false;}
+  paintGauges();
+}
+function paintGauges(){
+  gaugeLayer.clearLayers();
+  if(!state.pegel||map.getZoom()<PEGEL_ZOOM)return;
+  const b=map.getBounds().pad(.1),big=map.getZoom()>=12;
+  for(const g of gauges.values()){
+    if(!b.contains([g.lat,g.lon]))continue;
+    const span=el('span',big?'':'dot');
+    if(big)span.textContent=Math.round(g.value);
+    const m=L.marker([g.lat,g.lon],{icon:L.divIcon({className:'',html:'<span class="pgm">'+span.outerHTML+'</span>',iconSize:[0,0]}),keyboard:false,zIndexOffset:-500});
+    m.on('click',()=>{gaugeSel=g;openSheet('gauge');});
+    gaugeLayer.addLayer(m);
+  }
+}
+const NSW={low:'unter Niedrigwasser',high:'über Hochwasser',normal:'normal'};
+function renderGauge(){
+  const g=gaugeSel;if(!g)return;
+  $('shTitle').replaceChildren(el('span',null,'Pegel '),g.name);
+  const body=$('shBody');body.replaceChildren();
+  const row=el('div','nowrow'),now=el('div','now',g.water?g.water+(g.km!=null?', km '+nf(g.km,1):''):'');
+  now.appendChild(el('small','num',(TREND[String(g.trend)]?TREND_ARROW[String(g.trend)]+' '+TREND[String(g.trend)]+' · ':'')+'Stand '+hhmm(g.ts)));
+  const sp=el('div','speed num',nf(g.value,0));sp.appendChild(el('small',null,g.unit+' Pegelstand'));
+  row.append(now,sp);body.appendChild(row);
+  const dl=el('dl','facts');
+  if(NSW[g.nsw]&&g.nsw!=='normal')dl.append(el('dt',null,'Lage'),el('dd',null,NSW[g.nsw]));
+  dl.append(el('dt',null,'Nummer'),el('dd',null,String(g.number)));
+  if(dl.children.length)body.appendChild(dl);
+  const acts=el('div','acts');
+  const mk=el('button','btn pri','Als Mein Ort');mk.type='button';
+  mk.onclick=()=>{setPlace({name:g.name,lat:+g.lat.toFixed(5),lon:+g.lon.toFixed(5)});openSheet('pass');};
+  const a=el('a','btn','Pegelonline ↗');a.href='https://www.pegelonline.wsv.de/gast/stammdaten?pegelnr='+encodeURIComponent(g.number);a.target='_blank';a.rel='noopener';a.style.textDecoration='none';a.style.color='inherit';
+  acts.append(mk,a);body.appendChild(acts);
+}
+
 /* ---------- Suche ---------- */
 function findShip(){
   const q=state.query;if(!q)return;
@@ -923,6 +1050,7 @@ function openSheet(kind){
   if(kind==='fav')renderFavs();
   if(kind==='find')renderFind();
   if(kind==='news')renderNews();
+  if(kind==='gauge')renderGauge();
   map.invalidateSize();paintTrack();
 }
 /* Schließen klappt nur das Blatt ein. Das Schiff bleibt verfolgt, bis die Kapsel oben mit × beendet wird. */
@@ -941,13 +1069,52 @@ $('placeBtn').onclick=()=>{setTab('pass',true);openSheet('place');};
 
 /* ---------- Filter ---------- */
 function paintChips(){
-  document.querySelectorAll('.chip[data-cat]').forEach(c=>c.setAttribute('aria-pressed',String(state.cats.has(c.dataset.cat))));
+  const n=state.cats.size,k=CAT_ORDER.length;
+  $('typeTxt').textContent=n===k?'Alle Typen':n?n+' von '+k+' Typen':'Keine Typen';
+  const h=SEA_KEYS.length-state.seaOff.size;
+  $('nameTxt').textContent=h===SEA_KEYS.length?'Zeichen':h?'Zeichen '+h+'/'+SEA_KEYS.length:'Zeichen aus';
   $('stillChip').setAttribute('aria-pressed',String(state.still));
+  $('pegelChip').setAttribute('aria-pressed',String(state.pegel));
 }
+/* Aufklappmenüs: „Typen“ (welche Schiffe) und „Namen“ (bei welchen Typen das Namensschild steht) */
+let menuKind=null;
+function closeMenu(){menuKind=null;$('menu').hidden=true;$('typeBtn').setAttribute('aria-expanded','false');$('nameBtn').setAttribute('aria-expanded','false');}
+function renderMenu(){
+  const box=$('menu'),isType=menuKind==='type',keys=isType?CAT_ORDER:SEA_KEYS;
+  box.replaceChildren(el('h3',null,isType?'Diese Schiffstypen zeigen':'Diese Zeichen zeigen'));
+  const all=el('div','all'),a1=el('button',null,'Alle'),a2=el('button',null,'Keine');a1.type=a2.type='button';
+  const save=()=>{if(isType)store.set('cats',[...state.cats]);else{store.set('seaoff',[...state.seaOff]);applySea();paintSea();}};
+  const setAll=on=>{
+    if(isType)state.cats=new Set(on?CAT_ORDER:[]);else state.seaOff=new Set(on?[]:SEA_KEYS);
+    save();paintChips();renderMenu();render();paintPass(true);
+  };
+  a1.onclick=()=>setAll(true);a2.onclick=()=>setAll(false);all.append(a1,a2);box.appendChild(all);
+  for(const k of keys){
+    const lab=el('label',isType?'c-'+k:''),cb=el('input'),dot=el('i');cb.type='checkbox';
+    if(!isType)dot.style.background=SEA[k][1];
+    cb.checked=isType?state.cats.has(k):!state.seaOff.has(k);
+    cb.onchange=()=>{
+      if(isType)cb.checked?state.cats.add(k):state.cats.delete(k);else cb.checked?state.seaOff.delete(k):state.seaOff.add(k);
+      save();paintChips();render();paintPass(true);
+    };
+    lab.append(cb,dot,el('span',null,isType?CATS[k]:SEA[k][0]));box.appendChild(lab);
+  }
+  if(!isType)box.appendChild(el('p','hint','Sind alle Zeichen an, zeigt die Karte die fertigen OpenSeaMap-Symbole. Blendest du eine Art aus, werden die Zeichen ab Zoom '+SEA_ZOOM+' als farbige Punkte aus OpenStreetMap geladen (Tippen zeigt Name und Art).'));
+}
+function openMenu(kind){
+  if(menuKind===kind){closeMenu();return;}
+  menuKind=kind;renderMenu();$('menu').hidden=false;
+  $('typeBtn').setAttribute('aria-expanded',String(kind==='type'));$('nameBtn').setAttribute('aria-expanded',String(kind==='sea'));
+}
+/* composedPath statt closest: „Alle/Keine“ baut das Menü neu, das angeklickte Element ist dann schon abgehängt */
+document.addEventListener('click',e=>{if(menuKind&&!e.composedPath().some(n=>n.id==='menu'||n.id==='typeBtn'||n.id==='nameBtn'))closeMenu();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu();});
 $('chips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
+  if(c.id==='typeBtn')return openMenu('type');
+  if(c.id==='nameBtn')return openMenu('sea');
   if(c.id==='stillChip'){state.still=!state.still;store.set('still',state.still);}
-  else{const k=c.dataset.cat;state.cats.has(k)?state.cats.delete(k):state.cats.add(k);store.set('cats',[...state.cats]);}
+  else if(c.id==='pegelChip'){state.pegel=!state.pegel;store.set('pegel',state.pegel);if(state.pegel)loadGauges();paintGauges();}
   paintChips();render();paintPass(true);
 });
 $('shipQ').addEventListener('input',e=>{state.queryRaw=e.target.value.trim();state.query=norm(e.target.value);render();paintPass(true);});
@@ -968,14 +1135,15 @@ $('locBtn').onclick=()=>locate(ll=>{
 /* ---------- Takt ---------- */
 let moveT=null;
 /* Beim Folgen verschiebt render() selbst die Karte; dann nicht erneut rendern, sonst entsteht eine Schleife */
-map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();},900);});
+map.on('zoomend',()=>{paintGauges();paintSea();});
+map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadSea();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
-setInterval(loadData,30000);
+setInterval(()=>{loadData();loadGauges();},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
 $('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
 if(!store.get('hint',0))$('hint').hidden=false;
-paintPlace();paintChips();loadData();loadNews();
+paintPlace();paintChips();applySea();loadData();loadGauges();loadNews();
 </script>
 </body>
 </html>

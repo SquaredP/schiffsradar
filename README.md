@@ -7,7 +7,9 @@ Mobile Live-Karte für Schiffe auf Rhein, Neckar, Main und Co. – das Gegenstü
 ## Funktionen
 
 - **Karte mit Seezeichen** (OpenSeaMap) und allen Schiffen im Ausschnitt. Der Pfeil zeigt die Fahrtrichtung, liegende Schiffe sind Kreise. Gestrichelte Symbole haben seit über 20 Minuten nichts gemeldet.
-- **Filter** nach Fracht, Tanker, Fahrgast, Dienst · Schlepper und Sport · Sonstige. Liegende Schiffe (festgemacht, vor Anker) sind zuschaltbar. Suche nach Name oder MMSI, Enter sucht im ganzen Datenstand.
+- **Filter:** Das Menü „Typen“ klappt auf und schaltet Fracht, Tanker, Fahrgast, Dienst · Schlepper und Sport · Sonstige einzeln. Liegende Schiffe (festgemacht, vor Anker) sind zuschaltbar.
+- **Pegel auf der Karte:** Messstellen der WSV (PEGELONLINE) mit Pegelstand in cm, ab Zoom 10. Tippen zeigt Gewässer, Kilometer, Tendenz und Stand. Mit dem Chip „Pegel“ abschaltbar.
+- **Schifffahrtszeichen ausblenden:** Im Menü „Zeichen“ lassen sich Tonnen, Baken, Feuer, Tafeln, Bauwerke und Häfen einzeln abschalten. Sind alle an, zeigt die Karte die fertigen OpenSeaMap-Symbole. Sobald eine Art aus ist, lädt die Seite die Zeichen ab Zoom 13 für den sichtbaren Ausschnitt aus OpenStreetMap (Overpass-API) und zeigt sie als farbige Punkte, weil sich die fertigen Kacheln nicht filtern lassen. Suche nach Name oder MMSI, Enter sucht im ganzen Datenstand.
 - **Schiff verfolgen:** Die Karte folgt dem Schiff. Wie bei einem Navi ist der Kurs der nächsten 30 Minuten kräftig, das Kielwasser der letzten Stunden grau. Das Ziel laut AIS wird, wenn es sich einem Ort zuordnen lässt, gestrichelt mit Ankunftszeit eingezeichnet. „Strecke zeigen“ holt alles ins Bild.
 - **Schiffsdaten:** Typ, Flagge, MMSI, IMO, Rufzeichen, Länge × Breite, Tiefgang, Ziel und Ankunft laut AIS, Navigationsstatus, Links zu VesselFinder und MarineTraffic (dort gibt es Fotos).
 - **Geschwindigkeit** in km/h und Knoten, direkt aus der AIS-Meldung.
@@ -55,7 +57,7 @@ Alle Änderungen stehen in [CHANGELOG.md](CHANGELOG.md). Die Seite liest diese D
 - `index.html`: eine einzelne statische Datei mit Vanilla JavaScript, kein Build-Schritt. [Leaflet](https://leafletjs.com) für die Karte, Grundkarte von Esri, Seezeichen von [OpenSeaMap](https://openseamap.org).
 - `collector/`: Node-Skript (Node 22, Paket `ws`), das per WebSocket Meldungen von aisstream.io sammelt, mit dem zuletzt veröffentlichten Stand zusammenführt, Kielwasser ausdünnt und alte Einträge entfernt (fahrende Schiffe nach 3 h, liegende nach 12 h). aisstream erlaubt keine Verbindungen direkt aus dem Browser, damit der Schlüssel nicht öffentlich wird; deshalb dieser Umweg.
 - `.github/workflows/ais.yml`: sammelt, baut und veröffentlicht die Seite auf GitHub Pages, alle 10 Minuten und bei jedem Push auf `main`.
-- Zusatzdienste direkt aus dem Browser: [PEGELONLINE](https://www.pegelonline.wsv.de) (Pegelstände der WSV) und [Nominatim](https://nominatim.openstreetmap.org) (Ortssuche, Zuordnung der AIS-Ziele, Ergebnisse werden zwischengespeichert).
+- Zusatzdienste direkt aus dem Browser: [PEGELONLINE](https://www.pegelonline.wsv.de) (Pegelstände der WSV), [Overpass](https://overpass-api.de) (Seezeichen aus OpenStreetMap, nur bei aktivem Zeichenfilter) und [Nominatim](https://nominatim.openstreetmap.org) (Ortssuche, Zuordnung der AIS-Ziele, Ergebnisse werden zwischengespeichert).
 - Einstellungen und gemerkte Schiffe liegen im `localStorage` des Browsers.
 
 Lokal ausprobieren:

@@ -5,6 +5,10 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-21
 
+- Pegel auf der Karte: Pegelstand in cm direkt am Messort (ab Zoom 10), Tippen zeigt Tendenz und Stand, „Als Mein Ort“ übernimmt den Pegel. Mit dem Chip „Pegel“ ein- und ausschaltbar
+- Schiffstypen als aufklappendes Menü statt einzelner Chips
+- Schifffahrtszeichen nach Art ausblenden (Tonnen, Baken, Feuer, Tafeln, Brücken und Schleusen, Häfen) über das Menü „Zeichen“
+
 - Schiffe erscheinen erst ab Zoom 11 (ca. 20 km Umkreis) und werden nur für den sichtbaren Ausschnitt direkt auf dein Gerät geladen, keine Massenabfrage mehr
 - Hinweis beim ersten Öffnen zum Zoom-Level
 - Kann die Live-Quelle nicht erreicht werden, springt die Seite auf die Datei im Repo zurück
