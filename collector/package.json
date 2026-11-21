@@ -1,0 +1,10 @@
+{
+  "name": "schiffsradar-collector",
+  "private": true,
+  "type": "module",
+  "description": "Sammelt AIS-Positionen von aisstream.io für das Schiffsradar",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

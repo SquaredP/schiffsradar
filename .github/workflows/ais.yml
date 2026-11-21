@@ -1,0 +1,59 @@
+name: Schiffsdaten sammeln und veröffentlichen
+
+# Alle 10 Minuten: einige Minuten AIS-Daten von aisstream.io sammeln, mit dem letzten Stand
+# zusammenführen und die Seite samt data/ships.json auf GitHub Pages veröffentlichen.
+on:
+  schedule:
+    - cron: '4-59/10 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  collect-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Abhängigkeiten
+        run: npm install --prefix collector --no-audit --no-fund --omit=dev
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: AIS-Daten sammeln
+        run: node collector/collect.mjs
+        env:
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+          COLLECT_SECONDS: ${{ github.event_name == 'schedule' && '240' || '90' }}
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+
+      - name: Seite zusammenstellen
+        run: |
+          mkdir -p _site/data
+          cp index.html CHANGELOG.md README.md LICENSE _site/
+          cp out/ships.json _site/data/ships.json
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

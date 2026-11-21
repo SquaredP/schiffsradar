@@ -1,0 +1,9 @@
+{
+  "_hinweis": "Gebiete, für die der Sammler AIS-Daten abholt. box = [[Breite, Länge], [Breite, Länge]] zweier gegenüberliegender Ecken. Größere Gebiete bedeuten mehr Schiffe und eine größere Datei.",
+  "regions": [
+    {
+      "name": "Rhein, Main, Neckar, Mosel und Bodensee",
+      "box": [[47.4, 6.0], [52.0, 10.3]]
+    }
+  ]
+}
