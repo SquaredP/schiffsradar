@@ -250,7 +250,22 @@ function angDiff(a,b){const d=Math.abs(a-b)%360;return d>180?360-d:d;}
 function isStill(s){return s.st===1||s.st===5||s.st===6||s.sog==null||s.sog<0.5;}
 function courseOf(s){return s.cog!=null?s.cog:s.hdg!=null?s.hdg:null;}
 /* ---- Wasserwege (OpenStreetMap): Schiffe und Kurslinie folgen dem Flussverlauf ---- */
-let WN=null,wver=0;   // WN: {nodes:Map(id->{ll,nb:[id]}), edges:[[idA,idB]]}
+/* Overpass: mehrere öffentliche Server nacheinander probieren (einzelne sind oft überlastet) */
+const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+async function overpass(q){
+  let last;
+  for(const u of OVERPASS){
+    const ac=new AbortController(),t=setTimeout(()=>ac.abort(),40000);
+    try{
+      const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ac.signal});
+      if(r.ok){clearTimeout(t);return r;}
+      last=new Error(r.status);
+    }catch(e){last=e;}
+    clearTimeout(t);
+  }
+  throw last;
+}
+let WN=null,wver=0,wState='lädt';   // WN: {nodes:Map(id->{ll,nb:[id]}), edges:[[idA,idB]]}
 function buildNet(els){
   const nodes=new Map();
   for(const w of els){
@@ -291,7 +306,7 @@ function snapIn(net,s){
     const a=net.nodes.get(ia).ll,b=net.nodes.get(ib).ll;
     if(Math.min(a[0],b[0])>p[0]+.004||Math.max(a[0],b[0])<p[0]-.004||Math.min(a[1],b[1])>p[1]+.006||Math.max(a[1],b[1])<p[1]-.006)continue;
     const q=segProj(p,a,b);if(q.d>250)continue;
-    const df=angDiff(c,bearing(a,b)),ad=Math.min(df,180-df);if(ad>45)continue;
+    const df=angDiff(c,bearing(a,b)),ad=Math.min(df,180-df);if(ad>60)continue;
     const sc=q.d+ad*4;
     if(!best||sc<best.sc)best={sc,ia,ib,pt:q.pt,fw:df<90,off:[p[0]-q.pt[0],p[1]-q.pt[1]]};
   }
@@ -735,7 +750,7 @@ async function loadRouteNet(a,b){
   if(RN&&RNbox&&RNbox[0]<=S&&RNbox[1]<=W&&RNbox[2]>=N&&RNbox[3]>=E)return RN;
   const filt=area>3?'["cemt"~"^(III|IV|Va|Vb|VIa|VIb|VIc|VII|[3-7])"]':'';   // große Gebiete: nur Wasserstraßen mit Klasseneinstufung
   const q='[out:json][timeout:60];way["waterway"~"^(river|canal)$"]'+filt+'('+[S,W,N,E].map(x=>x.toFixed(4)).join(',')+');out geom;';
-  const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+  const r=await overpass(q);
   if(!r.ok)throw new Error(r.status);
   RN=buildNet((await r.json()).elements||[]);RNbox=[S,W,N,E];return RN;
 }
@@ -855,6 +870,7 @@ function renderShipStatus(){
   const sm=el('small','num');
   sm.append('Letzte Meldung '+hhmm(s.ts*1000)+', '+ago(p.age));
   if(p.est)sm.append(' · Position geschätzt');
+  if(!isStill(s)&&c!=null&&!p.snapped)sm.appendChild(el('span','late',' · Flussverlauf: '+(wState==='ok'?'kein Gewässer in Fahrtrichtung':wState)));
   if(p.age>STALE)sm.appendChild(el('span','late',' · veraltet'));
   if(state.place){const d=dist(p.ll,[state.place.lat,state.place.lon]);sm.append(' · '+(d<1000?Math.round(d)+' m':nf(d/1000,1)+' km')+' von '+state.place.name);}
   box.appendChild(sm);
@@ -1069,12 +1085,12 @@ async function loadWays(){
   const b=map.getBounds().pad(.6);wBusy=true;
   try{
     const q='[out:json][timeout:30];way["waterway"~"^(river|canal)$"]('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+');out geom;';
-    const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+    const r=await overpass(q);
     if(!r.ok)throw new Error(r.status);
     const net=buildNet((await r.json()).elements||[]);
-    if(net.edges.length){WN=net;wver++;}
+    if(net.edges.length){WN=net;wver++;wState='ok';}else wState='leer';
     wBox=b;wAt=Date.now();
-  }catch(e){wAt=Date.now()-1500000;}finally{wBusy=false;}   // bei Fehler in ca. 5 min neu versuchen
+  }catch(e){wAt=Date.now()-1500000;wState='Abruf fehlgeschlagen';}finally{wBusy=false;}   // bei Fehler in ca. 5 min neu versuchen
   render();
 }
 
@@ -1111,7 +1127,7 @@ async function loadSea(){
   const b=map.getBounds().pad(.3);seaBusy=true;
   try{
     const q='[out:json][timeout:20];node["seamark:type"]('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+');out body 2000;';
-    const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+    const r=await overpass(q);
     if(!r.ok)throw new Error(r.status);
     const j=await r.json();
     seaData=(j.elements||[]).filter(e=>e.lat!=null).map(e=>({lat:e.lat,lon:e.lon,g:seaGroup(e.tags['seamark:type']),t:e.tags['seamark:type'],n:e.tags['seamark:name']||e.tags.name||''}));
