@@ -238,6 +238,8 @@ function typeLabel(t){
 const NAV={0:'In Fahrt',1:'Vor Anker',2:'Manövrierunfähig',3:'Manövrierbehindert',4:'Tiefgangbehindert',5:'Festgemacht',6:'Auf Grund',
   7:'Beim Fischen',8:'Unter Segel',11:'Schleppverband',12:'Schubverband',14:'Notsignal (AIS-SART)'};
 const KN=0.514444;               // Knoten -> m/s
+const EXTRAP_RIVER=600;           // am Fluss entlang bis 10 min fortschreiben
+const AHEAD_RIVER=1800;           // Kurslinie am Fluss: 30 min
 const EXTRAP_MAX=90;              // Position höchstens 90 s fortschreiben (in Flussbögen wäre mehr Land statt Wasser)
 const AHEAD=180;                  // Kurslinie voraus: 3 Minuten, weiter wäre in Flussbögen geraten
 const STALE=1200;                 // ab 20 min ohne Meldung gestrichelt
@@ -247,10 +249,85 @@ function project(p,brg,m){const r=brg*Math.PI/180;return[p[0]+m*Math.cos(r)/1113
 function angDiff(a,b){const d=Math.abs(a-b)%360;return d>180?360-d:d;}
 function isStill(s){return s.st===1||s.st===5||s.st===6||s.sog==null||s.sog<0.5;}
 function courseOf(s){return s.cog!=null?s.cog:s.hdg!=null?s.hdg:null;}
+/* ---- Wasserwege (OpenStreetMap): Schiffe und Kurslinie folgen dem Flussverlauf ---- */
+let WN=null,wver=0;   // WN: {nodes:Map(id->{ll,nb:[id]}), edges:[[idA,idB]]}
+function buildNet(els){
+  const nodes=new Map();
+  for(const w of els){
+    if(!w.nodes||!w.geometry||w.nodes.length!==w.geometry.length)continue;
+    for(let i=0;i<w.nodes.length;i++){
+      const g=w.geometry[i];if(!g)continue;
+      const id=w.nodes[i];let n=nodes.get(id);
+      if(!n){n={ll:[g.lat,g.lon],nb:[]};nodes.set(id,n);}
+      if(i>0&&w.geometry[i-1]){
+        const pid=w.nodes[i-1],pn=nodes.get(pid);
+        if(pn&&pid!==id){if(!n.nb.includes(pid))n.nb.push(pid);if(!pn.nb.includes(id))pn.nb.push(id);}
+      }
+    }
+  }
+  const edges=[];
+  for(const[id,n]of nodes)for(const nb of n.nb)if(id<nb)edges.push([id,nb]);
+  return{nodes,edges};
+}
+function segProj(p,a,b){
+  const ky=111320,k=Math.cos(p[0]*Math.PI/180)*ky;
+  const ax=(a[1]-p[1])*k,ay=(a[0]-p[0])*ky,bx=(b[1]-p[1])*k,by=(b[0]-p[0])*ky;
+  const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy;
+  let t=l2>0?-(ax*dx+ay*dy)/l2:0;t=Math.max(0,Math.min(1,t));
+  const x=ax+dx*t,y=ay+dy*t;
+  return{d:Math.hypot(x,y),t,pt:[p[0]+y/ky,p[1]+x/k]};
+}
+/* Schiff auf das Gewässer legen: nächste Kante in Fahrtrichtung (höchstens 250 m entfernt, Kurs höchstens 45° daneben) */
+function snapShip(s){
+  if(!WN)return null;
+  const c=courseOf(s);if(c==null||isStill(s))return null;
+  if(s._sn&&s._sn.v===wver&&s._sn.ts===s.ts)return s._sn.r;
+  const p=[s.lat,s.lon];let best=null;
+  for(const[ia,ib]of WN.edges){
+    const a=WN.nodes.get(ia).ll,b=WN.nodes.get(ib).ll;
+    if(Math.min(a[0],b[0])>p[0]+.004||Math.max(a[0],b[0])<p[0]-.004||Math.min(a[1],b[1])>p[1]+.006||Math.max(a[1],b[1])<p[1]-.006)continue;
+    const q=segProj(p,a,b);if(q.d>250)continue;
+    const df=angDiff(c,bearing(a,b)),ad=Math.min(df,180-df);if(ad>45)continue;
+    const sc=q.d+ad*4;
+    if(!best||sc<best.sc)best={sc,ia,ib,pt:q.pt,fw:df<90,off:[p[0]-q.pt[0],p[1]-q.pt[1]]};
+  }
+  s._sn={v:wver,ts:s.ts,r:best};return best;
+}
+/* Dem Gewässer ab dem Schiff folgen. An Abzweigen gilt der geradeste Weg. Gibt Punkte und Wegstrecke zurück. */
+function walkNet(sn,meters){
+  const nodes=WN.nodes,fade=d=>Math.max(0,1-d/1500);
+  const pts=[[sn.pt[0]+sn.off[0],sn.pt[1]+sn.off[1]]],cum=[0];
+  let prev=sn.fw?sn.ia:sn.ib,next=sn.fw?sn.ib:sn.ia,cur=sn.pt,D=0;
+  const push=(ll,d)=>{const f=fade(d);pts.push([ll[0]+sn.off[0]*f,ll[1]+sn.off[1]*f]);cum.push(d);};
+  for(let g=0;g<5000&&D<meters;g++){
+    const nn=nodes.get(next).ll,seg=dist(cur,nn);
+    if(D+seg>=meters){const f=seg>0?(meters-D)/seg:0;push([cur[0]+(nn[0]-cur[0])*f,cur[1]+(nn[1]-cur[1])*f],meters);break;}
+    D+=seg;push(nn,D);
+    const brg=bearing(cur,nn);let bn=null,bd=100;
+    for(const id of nodes.get(next).nb){if(id===prev)continue;const df=angDiff(brg,bearing(nn,nodes.get(id).ll));if(df<bd){bd=df;bn=id;}}
+    if(bn==null)break;       // Sackgasse oder Ende des geladenen Gebiets
+    prev=next;next=bn;cur=nn;
+  }
+  return{pts,cum};
+}
+function polyAt(w,m){
+  const{pts,cum}=w;if(m<=0)return pts[0];
+  for(let i=1;i<pts.length;i++)if(cum[i]>=m){const f=cum[i]>cum[i-1]?(m-cum[i-1])/(cum[i]-cum[i-1]):0;return[pts[i-1][0]+(pts[i][0]-pts[i-1][0])*f,pts[i-1][1]+(pts[i][1]-pts[i-1][1])*f];}
+  return pts[pts.length-1];
+}
+function polyFrom(w,m){
+  const i=w.cum.findIndex(x=>x>m);if(i<0)return[w.pts[w.pts.length-1]];
+  return[polyAt(w,m)].concat(w.pts.slice(i));
+}
 /* Geschätzte Position jetzt: letzte Meldung, bei fahrenden Schiffen mit Kurs und Fahrt fortgeschrieben */
 function shipPos(s,now){
   const age=Math.max(0,now-s.ts),ll=[s.lat,s.lon],c=courseOf(s);
   if(isStill(s)||c==null)return{ll,age,est:false};
+  const sn=snapShip(s);
+  if(sn){   // entlang des Flusses, auch durch Bögen
+    const m=s.sog*KN*Math.min(age,EXTRAP_RIVER);
+    return{ll:m>1?polyAt(walkNet(sn,m),m):ll,age,est:m>s.sog*KN*20,snapped:true};
+  }
   const dt=Math.min(age,EXTRAP_MAX);
   return{ll:dt>0?project(ll,c,s.sog*KN*dt):ll,age,est:dt>20};
 }
@@ -551,8 +628,16 @@ function routeGeometry(s,now){
   for(let i=0;i+2<tr.length;i+=3)if(tr[i+2]<=s.ts+1)pts.push([tr[i],tr[i+1]]);
   const wake=pts.concat([[s.lat,s.lon],p.ll]);
   const c=courseOf(s),still=isStill(s)||c==null;
-  const ahead=still?[]:[p.ll,project(p.ll,c,Math.max(150,s.sog*KN*AHEAD))];
-  return{p,wake,ahead};
+  let ahead=[],river=false;
+  if(!still){
+    const sn=snapShip(s);
+    if(sn){
+      const v=s.sog*KN,m0=v*Math.min(p.age,EXTRAP_RIVER),w=walkNet(sn,m0+v*AHEAD_RIVER);
+      ahead=polyFrom(w,m0);river=ahead.length>1;
+    }
+    if(!river)ahead=[p.ll,project(p.ll,c,Math.max(150,s.sog*KN*AHEAD))];
+  }
+  return{p,wake,ahead,river};
 }
 function setLabel(key,ll,txt,dest){
   let tt=route.labels.get(key);
@@ -568,7 +653,7 @@ function paintRoute(){
   const g=routeGeometry(s,nowSec());
   route.wake.setLatLngs(g.wake.length>2?g.wake:[]);
   route.ahead.setLatLngs(g.ahead);route.casing.setLatLngs(g.ahead);
-  setLabel('ahead',g.ahead.length?g.ahead[1]:null,'Kurs',false);
+  setLabel('ahead',g.ahead.length?g.ahead[g.ahead.length-1]:null,g.river?'in 30 min':'Kurs',false);
   const d=sel.dest;
   if(d&&d.ll&&dist(g.p.ll,d.ll)>500){
     route.dest.setLatLngs([g.p.ll,d.ll]);
@@ -877,6 +962,24 @@ async function nameFromMap(c){
 }
 
 
+
+/* Flüsse und Kanäle aus OpenStreetMap (Overpass), für den sichtbaren Ausschnitt, 30 min zwischengespeichert */
+let wBox=null,wAt=0,wBusy=false;
+async function loadWays(){
+  if(map.getZoom()<MIN_ZOOM||document.hidden||wBusy)return;
+  if(wBox&&wBox.contains(map.getBounds())&&Date.now()-wAt<1800000)return;
+  const b=map.getBounds().pad(.6);wBusy=true;
+  try{
+    const q='[out:json][timeout:30];way["waterway"~"^(river|canal)$"]('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+');out geom;';
+    const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+    if(!r.ok)throw new Error(r.status);
+    const net=buildNet((await r.json()).elements||[]);
+    if(net.edges.length){WN=net;wver++;}
+    wBox=b;wAt=Date.now();
+  }catch(e){wAt=Date.now()-1500000;}finally{wBusy=false;}   // bei Fehler in ca. 5 min neu versuchen
+  render();
+}
+
 /* ---------- Schifffahrtszeichen ausblenden (nach Art) ----------
    Alle an: fertige OpenSeaMap-Kacheln (schön, aber nicht filterbar).
    Sobald eine Art aus ist: Zeichen kommen als Punkte aus OpenStreetMap (Overpass) und lassen sich nach Art filtern. */
@@ -1141,14 +1244,14 @@ $('locBtn').onclick=()=>locate(ll=>{
 let moveT=null;
 /* Beim Folgen verschiebt render() selbst die Karte; dann nicht erneut rendern, sonst entsteht eine Schleife */
 map.on('zoomend',()=>{paintGauges();paintSea();});
-map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadSea();},900);});
+map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadSea();loadWays();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
-setInterval(()=>{loadData();loadGauges();},30000);
+setInterval(()=>{loadData();loadGauges();loadWays();},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
 $('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
 if(!store.get('hint',0))$('hint').hidden=false;
-paintPlace();paintChips();applySea();loadData();loadGauges();loadNews();
+paintPlace();paintChips();applySea();loadData();loadGauges();loadWays();loadNews();
 </script>
 </body>
 </html>

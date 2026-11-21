@@ -5,6 +5,8 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-21
 
+- Schiffe und Kurslinie folgen dem Flussverlauf (OpenStreetMap) statt geradeaus: auch in Bögen bleiben sie auf dem Wasser, die Linie zeigt wieder 30 Minuten voraus
+
 - Korrektur: Schiffe liefen in Flussbögen über Land. Die Position wird nur noch bis zu 90 Sekunden fortgeschrieben, die Kurslinie zeigt 3 Minuten voraus
 - „Liegende“ steht jetzt im Menü „Typen“
 
