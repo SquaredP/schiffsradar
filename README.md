@@ -7,10 +7,10 @@ Mobile Live-Karte für Schiffe auf Rhein, Neckar, Main und Co. – das Gegenstü
 ## Funktionen
 
 - **Karte mit Seezeichen** (OpenSeaMap) und allen Schiffen im Ausschnitt. Der Pfeil zeigt die Fahrtrichtung, liegende Schiffe sind Kreise. Gestrichelte Symbole haben seit über 20 Minuten nichts gemeldet.
-- **Filter:** Das Menü „Typen“ klappt auf und schaltet Fracht, Tanker, Fahrgast, Dienst · Schlepper und Sport · Sonstige einzeln. Liegende Schiffe (festgemacht, vor Anker) sind zuschaltbar.
+- **Filter:** Das Menü „Typen“ klappt auf und schaltet Fracht, Tanker, Fahrgast, Dienst · Schlepper und Sport · Sonstige einzeln. Liegende Schiffe (festgemacht, vor Anker) lassen sich im selben Menü zuschalten.
 - **Pegel auf der Karte:** Messstellen der WSV (PEGELONLINE) mit Pegelstand in cm, ab Zoom 10. Tippen zeigt Gewässer, Kilometer, Tendenz und Stand. Mit dem Chip „Pegel“ abschaltbar.
 - **Schifffahrtszeichen ausblenden:** Im Menü „Zeichen“ lassen sich Tonnen, Baken, Feuer, Tafeln, Bauwerke und Häfen einzeln abschalten. Sind alle an, zeigt die Karte die fertigen OpenSeaMap-Symbole. Sobald eine Art aus ist, lädt die Seite die Zeichen ab Zoom 13 für den sichtbaren Ausschnitt aus OpenStreetMap (Overpass-API) und zeigt sie als farbige Punkte, weil sich die fertigen Kacheln nicht filtern lassen. Suche nach Name oder MMSI, Enter sucht im ganzen Datenstand.
-- **Schiff verfolgen:** Die Karte folgt dem Schiff. Wie bei einem Navi ist der Kurs der nächsten 30 Minuten kräftig, das Kielwasser der letzten Stunden grau. Das Ziel laut AIS wird, wenn es sich einem Ort zuordnen lässt, gestrichelt mit Ankunftszeit eingezeichnet. „Strecke zeigen“ holt alles ins Bild.
+- **Schiff verfolgen:** Die Karte folgt dem Schiff. Wie bei einem Navi ist das Kielwasser der letzten Stunden grau und ein kurzes Stück Kurs voraus (3 Minuten) kräftig. Weiter voraus rät die Seite nicht, weil sie die Flussbögen nicht kennt. Das Ziel laut AIS wird, wenn es sich einem Ort zuordnen lässt, gestrichelt mit Ankunftszeit eingezeichnet. „Strecke zeigen“ holt alles ins Bild.
 - **Schiffsdaten:** Typ, Flagge, MMSI, IMO, Rufzeichen, Länge × Breite, Tiefgang, Ziel und Ankunft laut AIS, Navigationsstatus, Links zu VesselFinder und MarineTraffic (dort gibt es Fotos).
 - **Geschwindigkeit** in km/h und Knoten, direkt aus der AIS-Meldung.
 - **Mein Ort** (statt „Mein Bahnhof“): ein Ort am Wasser, z. B. der Bootssteg. Die Liste zeigt, welche Schiffe in den nächsten 90 Minuten vorbeikommen und welche in der Nähe liegen, dazu den nächsten Pegel aus PEGELONLINE mit Tendenz. Optional nur diese Schiffe auf der Karte.
@@ -29,7 +29,7 @@ Schiffe senden ihre Position per **AIS** (Automatic Identification System) selbs
 
 **Rückfall:** Kann der Browser Open Waters nicht erreichen, nutzt die Seite die Datei `data/ships.json`. Die füllt ein GitHub-Workflow alle 10 Minuten aus [aisstream.io](https://aisstream.io) (siehe Einrichtung). Diese Datei enthält zusätzlich Ziel, Ankunft und Abmessungen, die der Live-Weg nicht liefert.
 
-Zwischen zwei Meldungen schreibt die Seite die Position fahrender Schiffe mit Kurs und Fahrt fort (höchstens 10 Minuten). In Kurven kann ein Schiff dadurch kurz neben dem Fluss erscheinen. Die Vorbeifahrt-Zeiten unter „Mein Ort“ sind Schätzungen über die Luftlinie; auf Flüssen ist der Weg länger, das Schiff kommt also eher etwas später.
+Zwischen zwei Meldungen schreibt die Seite die Position fahrender Schiffe mit Kurs und Fahrt fort, höchstens 90 Sekunden lang. Danach bleibt das Schiff an seiner letzten gemeldeten Position, bis die nächste Meldung kommt. Die Seite kennt den Flussverlauf nicht; längeres Fortschreiben ließ Schiffe in Flussbögen über Land laufen. Die Vorbeifahrt-Zeiten unter „Mein Ort“ sind Schätzungen über die Luftlinie; auf Flüssen ist der Weg länger, das Schiff kommt also eher etwas später.
 
 **Nicht für die Navigation verwenden.**
 

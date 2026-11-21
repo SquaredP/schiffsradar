@@ -62,6 +62,7 @@ a{color:var(--focus)}
 .menu{max-height:60dvh;overflow-y:auto;align-self:flex-start;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.22);padding:6px 4px;min-width:220px}
 .menu h3{margin:4px 10px 2px;font:600 12px/1.2 var(--ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .menu label{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer}
+.menu i.ring{background:none!important;border:2px solid var(--muted)}
 .menu label i{width:12px;height:12px;border-radius:50%;background:var(--c)}
 .menu input{width:18px;height:18px;margin:0}
 .menu .hint{margin:4px 10px 6px;font-size:12px;max-width:260px}
@@ -183,7 +184,6 @@ nav button[aria-current="true"]{color:var(--fg);border-top-color:var(--fg)}
       <button class="chip" id="typeBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="typeTxt">Typen</span> ▾</button>
       <button class="chip" id="nameBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="nameTxt">Zeichen</span> ▾</button>
       <button class="chip c-pegel" id="pegelChip" type="button"><i></i>Pegel</button>
-      <button class="chip still" id="stillChip" type="button"><i></i>Liegende</button>
       <input class="lineq" id="shipQ" type="search" placeholder="Name oder MMSI" enterkeyhint="search" autocomplete="off" aria-label="Nach Schiffsname oder MMSI filtern">
     </div>
     <div class="menu" id="menu" hidden></div>
@@ -238,7 +238,8 @@ function typeLabel(t){
 const NAV={0:'In Fahrt',1:'Vor Anker',2:'Manövrierunfähig',3:'Manövrierbehindert',4:'Tiefgangbehindert',5:'Festgemacht',6:'Auf Grund',
   7:'Beim Fischen',8:'Unter Segel',11:'Schleppverband',12:'Schubverband',14:'Notsignal (AIS-SART)'};
 const KN=0.514444;               // Knoten -> m/s
-const EXTRAP_MAX=600;             // Position höchstens 10 min fortschreiben
+const EXTRAP_MAX=90;              // Position höchstens 90 s fortschreiben (in Flussbögen wäre mehr Land statt Wasser)
+const AHEAD=180;                  // Kurslinie voraus: 3 Minuten, weiter wäre in Flussbögen geraten
 const STALE=1200;                 // ab 20 min ohne Meldung gestrichelt
 function dist(a,b){const k=Math.cos((a[0]+b[0])*Math.PI/360);const dy=(a[0]-b[0])*111320,dx=(a[1]-b[1])*111320*k;return Math.sqrt(dx*dx+dy*dy);}
 function bearing(a,b){const k=Math.cos((a[0]+b[0])*Math.PI/360);const dy=b[0]-a[0],dx=(b[1]-a[1])*k;return(Math.atan2(dx,dy)*180/Math.PI+360)%360;}
@@ -251,7 +252,7 @@ function shipPos(s,now){
   const age=Math.max(0,now-s.ts),ll=[s.lat,s.lon],c=courseOf(s);
   if(isStill(s)||c==null)return{ll,age,est:false};
   const dt=Math.min(age,EXTRAP_MAX);
-  return{ll:dt>0?project(ll,c,s.sog*KN*dt):ll,age,est:dt>30};
+  return{ll:dt>0?project(ll,c,s.sog*KN*dt):ll,age,est:dt>20};
 }
 function compass(b){return['Nord','Nordost','Ost','Südost','Süd','Südwest','West','Nordwest'][Math.round(b/45)%8];}
 /* AIS-ETA [Monat, Tag, Stunde, Minute] in UTC ohne Jahr -> Zeitpunkt im nächstliegenden Jahr */
@@ -550,7 +551,7 @@ function routeGeometry(s,now){
   for(let i=0;i+2<tr.length;i+=3)if(tr[i+2]<=s.ts+1)pts.push([tr[i],tr[i+1]]);
   const wake=pts.concat([[s.lat,s.lon],p.ll]);
   const c=courseOf(s),still=isStill(s)||c==null;
-  const ahead=still?[]:[p.ll,project(p.ll,c,s.sog*KN*1800)];
+  const ahead=still?[]:[p.ll,project(p.ll,c,Math.max(150,s.sog*KN*AHEAD))];
   return{p,wake,ahead};
 }
 function setLabel(key,ll,txt,dest){
@@ -567,7 +568,7 @@ function paintRoute(){
   const g=routeGeometry(s,nowSec());
   route.wake.setLatLngs(g.wake.length>2?g.wake:[]);
   route.ahead.setLatLngs(g.ahead);route.casing.setLatLngs(g.ahead);
-  setLabel('ahead',g.ahead.length?g.ahead[1]:null,'in 30 min',false);
+  setLabel('ahead',g.ahead.length?g.ahead[1]:null,'Kurs',false);
   const d=sel.dest;
   if(d&&d.ll&&dist(g.p.ll,d.ll)>500){
     route.dest.setLatLngs([g.p.ll,d.ll]);
@@ -1070,10 +1071,9 @@ $('placeBtn').onclick=()=>{setTab('pass',true);openSheet('place');};
 /* ---------- Filter ---------- */
 function paintChips(){
   const n=state.cats.size,k=CAT_ORDER.length;
-  $('typeTxt').textContent=n===k?'Alle Typen':n?n+' von '+k+' Typen':'Keine Typen';
+  $('typeTxt').textContent=(n===k?'Alle Typen':n?n+' von '+k+' Typen':'Keine Typen')+(state.still?' + liegende':'');
   const h=SEA_KEYS.length-state.seaOff.size;
   $('nameTxt').textContent=h===SEA_KEYS.length?'Zeichen':h?'Zeichen '+h+'/'+SEA_KEYS.length:'Zeichen aus';
-  $('stillChip').setAttribute('aria-pressed',String(state.still));
   $('pegelChip').setAttribute('aria-pressed',String(state.pegel));
 }
 /* Aufklappmenüs: „Typen“ (welche Schiffe) und „Namen“ (bei welchen Typen das Namensschild steht) */
@@ -1099,6 +1099,12 @@ function renderMenu(){
     };
     lab.append(cb,dot,el('span',null,isType?CATS[k]:SEA[k][0]));box.appendChild(lab);
   }
+  if(isType){
+    const lab=el('label'),cb=el('input'),dot=el('i','ring');cb.type='checkbox';cb.checked=state.still;
+    cb.onchange=()=>{state.still=cb.checked;store.set('still',state.still);paintChips();render();paintPass(true);};
+    lab.append(cb,dot,el('span',null,'Liegende (festgemacht, vor Anker)'));
+    box.append(el('h3',null,'Zusätzlich'),lab);
+  }
   if(!isType)box.appendChild(el('p','hint','Sind alle Zeichen an, zeigt die Karte die fertigen OpenSeaMap-Symbole. Blendest du eine Art aus, werden die Zeichen ab Zoom '+SEA_ZOOM+' als farbige Punkte aus OpenStreetMap geladen (Tippen zeigt Name und Art).'));
 }
 function openMenu(kind){
@@ -1113,8 +1119,7 @@ $('chips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
   if(c.id==='typeBtn')return openMenu('type');
   if(c.id==='nameBtn')return openMenu('sea');
-  if(c.id==='stillChip'){state.still=!state.still;store.set('still',state.still);}
-  else if(c.id==='pegelChip'){state.pegel=!state.pegel;store.set('pegel',state.pegel);if(state.pegel)loadGauges();paintGauges();}
+  if(c.id==='pegelChip'){state.pegel=!state.pegel;store.set('pegel',state.pegel);if(state.pegel)loadGauges();paintGauges();}
   paintChips();render();paintPass(true);
 });
 $('shipQ').addEventListener('input',e=>{state.queryRaw=e.target.value.trim();state.query=norm(e.target.value);render();paintPass(true);});
