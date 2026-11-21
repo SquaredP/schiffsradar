@@ -478,7 +478,7 @@ const favSet=()=>new Set(state.favs.map(f=>f.m));
 /* ---------- Karte ---------- */
 const start=state.place?[state.place.lat,state.place.lon]:[49.4794,8.4699];
 const v0=store.get('view',{c:start,z:12});
-const map=L.map('map',{zoomControl:false,attributionControl:true}).setView(v0.c,v0.z);
+const map=L.map('map',{zoomControl:false,attributionControl:true,doubleClickZoom:false}).setView(v0.c,v0.z);
 map.attributionControl.setPrefix(false);
 const dark=matchMedia('(prefers-color-scheme: dark)');
 let base=null;
@@ -1357,11 +1357,23 @@ $('locBtn').onclick=()=>locate(ll=>{
 /* ---------- Takt ---------- */
 let moveT=null;
 /* Beim Folgen verschiebt render() selbst die Karte; dann nicht erneut rendern, sonst entsteht eine Schleife */
+/* Doppeltippen = eine Zoomstufe näher, um die Tippstelle (eigene Erkennung, weil iOS-Safari das sonst als Seitenzoom schluckt) */
+{const c=map.getContainer();let last=null;
+  c.style.touchAction='none';
+  c.addEventListener('pointerup',e=>{
+    if(e.pointerType==='mouse'||e.target.closest('.leaflet-control,.leaflet-popup'))return;
+    const t=Date.now(),p=[e.clientX,e.clientY];
+    if(last&&t-last.t<320&&Math.hypot(p[0]-last.p[0],p[1]-last.p[1])<30){
+      last=null;e.preventDefault();
+      map.setZoomAround(map.mouseEventToContainerPoint(e),Math.min(map.getMaxZoom()||19,map.getZoom()+1));
+    }else last={t,p};
+  });
+  map.on('dblclick',e=>map.setZoomAround(e.containerPoint,Math.min(map.getMaxZoom()||19,map.getZoom()+1)));}
 map.on('zoomend',()=>{paintGauges();paintSea();});
 map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadSea();loadWays();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
-setInterval(()=>{loadData();loadGauges();loadWays();},30000);
+setInterval(()=>{loadData();loadGauges();loadWays();},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
 $('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
 if(!store.get('hint',0))$('hint').hidden=false;

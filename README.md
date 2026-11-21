@@ -25,7 +25,7 @@ Linienverkehr gibt es auf dem Wasser seltener als auf der Schiene, aber es gibt 
 
 Schiffe senden ihre Position per **AIS** (Automatic Identification System) selbst, alle paar Sekunden bis Minuten. Diese Funksignale fangen Behörden und ehrenamtliche Empfänger an Land auf. Die Abdeckung hängt davon ab, wo solche Empfänger stehen, auf manchen Flussabschnitten fehlen Schiffe deshalb.
 
-**Datensparsam:** Schiffe erscheinen erst ab Zoom 11 (rund 20 km Umkreis). Unterhalb davon fragt die Seite nichts ab. Darüber lädt dein Gerät nur den **sichtbaren Ausschnitt** direkt von [Open Waters AIS](https://openwaters.io/ais/) (kein Konto, kein Schlüssel), beim Verschieben der Karte und danach alle 30 Sekunden. Es gibt keine Massenabfrage aller Schiffe. Das Kielwasser sammelt die Seite selbst, solange sie offen ist.
+**Datensparsam:** Schiffe erscheinen erst ab Zoom 11 (rund 20 km Umkreis). Unterhalb davon fragt die Seite nichts ab. Darüber lädt dein Gerät nur den **sichtbaren Ausschnitt** direkt von [Open Waters AIS](https://openwaters.io/ais/) (kein Konto, kein Schlüssel), beim Verschieben der Karte und danach alle 10 Sekunden (nur bei sichtbarer Seite). Es gibt keine Massenabfrage aller Schiffe. Das Kielwasser sammelt die Seite selbst, solange sie offen ist.
 
 **Rückfall:** Kann der Browser Open Waters nicht erreichen, nutzt die Seite die Datei `data/ships.json`. Die füllt ein GitHub-Workflow alle 10 Minuten aus [aisstream.io](https://aisstream.io) (siehe Einrichtung). Diese Datei enthält zusätzlich Ziel, Ankunft und Abmessungen, die der Live-Weg nicht liefert.
 
