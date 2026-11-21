@@ -21,22 +21,26 @@ Linienverkehr gibt es auf dem Wasser seltener als auf der Schiene, aber es gibt 
 
 ## Wie genau sind die Positionen?
 
-Schiffe senden ihre Position per **AIS** (Automatic Identification System) selbst, alle paar Sekunden bis Minuten. Diese Funksignale fangen ehrenamtlich betriebene Empfänger an Land auf; [aisstream.io](https://aisstream.io) stellt sie kostenlos bereit. Die Abdeckung hängt davon ab, wo solche Empfänger stehen, auf manchen Flussabschnitten fehlen Schiffe deshalb.
+Schiffe senden ihre Position per **AIS** (Automatic Identification System) selbst, alle paar Sekunden bis Minuten. Diese Funksignale fangen Behörden und ehrenamtliche Empfänger an Land auf. Die Abdeckung hängt davon ab, wo solche Empfänger stehen, auf manchen Flussabschnitten fehlen Schiffe deshalb.
 
-Die Seite ist eine reine statische Seite ohne Server. Darum holt ein GitHub-Workflow **alle 10 Minuten** für etwa 4 Minuten Meldungen ab und legt sie als `data/ships.json` ab. Zwischen zwei Abrufen schreibt die Seite die Position fahrender Schiffe mit Kurs und Fahrt fort (höchstens 10 Minuten). In Kurven kann ein Schiff dadurch kurz neben dem Fluss erscheinen. Auch die Vorbeifahrt-Zeiten unter „Mein Ort“ sind Schätzungen über die Luftlinie; auf Flüssen ist der Weg länger, das Schiff kommt also eher etwas später. GitHub startet geplante Workflows manchmal verzögert.
+**Datensparsam:** Schiffe erscheinen erst ab Zoom 11 (rund 20 km Umkreis). Unterhalb davon fragt die Seite nichts ab. Darüber lädt dein Gerät nur den **sichtbaren Ausschnitt** direkt von [Open Waters AIS](https://openwaters.io/ais/) (kein Konto, kein Schlüssel), beim Verschieben der Karte und danach alle 30 Sekunden. Es gibt keine Massenabfrage aller Schiffe. Das Kielwasser sammelt die Seite selbst, solange sie offen ist.
+
+**Rückfall:** Kann der Browser Open Waters nicht erreichen, nutzt die Seite die Datei `data/ships.json`. Die füllt ein GitHub-Workflow alle 10 Minuten aus [aisstream.io](https://aisstream.io) (siehe Einrichtung). Diese Datei enthält zusätzlich Ziel, Ankunft und Abmessungen, die der Live-Weg nicht liefert.
+
+Zwischen zwei Meldungen schreibt die Seite die Position fahrender Schiffe mit Kurs und Fahrt fort (höchstens 10 Minuten). In Kurven kann ein Schiff dadurch kurz neben dem Fluss erscheinen. Die Vorbeifahrt-Zeiten unter „Mein Ort“ sind Schätzungen über die Luftlinie; auf Flüssen ist der Weg länger, das Schiff kommt also eher etwas später.
 
 **Nicht für die Navigation verwenden.**
 
-## Einrichtung
+## Einrichtung (nur für den Rückfall nötig)
 
-Einmalig nötig, danach läuft alles von selbst:
+Die Seite funktioniert live auch ohne diese Schritte, sofern Open Waters für dein Gebiet Schiffe hat. Für den Rückfall über aisstream.io einmalig:
 
 1. **API-Schlüssel holen:** Auf [aisstream.io](https://aisstream.io) mit dem GitHub-Konto anmelden, unter „API Keys“ einen Schlüssel erzeugen.
 2. **Als Secret hinterlegen:** Im Repository unter *Settings → Secrets and variables → Actions → New repository secret* den Namen `AISSTREAM_API_KEY` und den Schlüssel als Wert eintragen. Der Schlüssel bleibt im Workflow und erscheint nie auf der Seite.
 3. **GitHub Pages einschalten:** *Settings → Pages → Build and deployment → Source:* „GitHub Actions“ wählen.
 4. **Ersten Lauf starten:** *Actions → „Schiffsdaten sammeln und veröffentlichen“ → Run workflow.* Nach rund zwei Minuten ist die Seite mit Daten online.
 
-Ohne Schlüssel wird die Seite trotzdem veröffentlicht und zeigt oben einen Hinweis.
+Ohne Schlüssel wird die Seite trotzdem veröffentlicht; der Rückfall bleibt dann leer.
 
 **Gebiet ändern:** In [`regions.json`](regions.json) stehen die Rechtecke, für die Daten gesammelt werden (Standard: Rhein von Basel bis zur niederländischen Grenze mit Main, Neckar, Mosel und Bodensee). Weitere Rechtecke, z. B. für die Deutsche Bucht, einfach ergänzen. Größere Gebiete bedeuten mehr Schiffe und eine größere Datei.
 
@@ -65,7 +69,8 @@ python3 -m http.server   # dann http://localhost:8000 öffnen
 
 ## Daten und Nutzungsbedingungen
 
-- Schiffsdaten: AIS-Meldungen über [aisstream.io](https://aisstream.io) (kostenlos, Beta, ohne Verfügbarkeitszusage). Bitte die Bedingungen des Dienstes beachten.
+- Schiffsdaten live: [Open Waters AIS](https://openwaters.io/ais/), für den privaten Gebrauch kostenlos. Quellen sind u. a. norwegische und finnische Behörden (NLOD 2.0, CC BY 4.0), ehrenamtliche Empfänger (CC0) und AISHub. Bitte die [Bedingungen](https://openwaters.io/license/) beachten.
+- Schiffsdaten im Rückfall: [aisstream.io](https://aisstream.io) (kostenlos, Beta, ohne Verfügbarkeitszusage).
 - Pegel: © Wasserstraßen- und Schifffahrtsverwaltung des Bundes (WSV), PEGELONLINE.
 - Kartendaten: © OpenStreetMap-Mitwirkende, Esri, OpenSeaMap. Ortssuche: Nominatim / OpenStreetMap.
 

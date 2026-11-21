@@ -174,6 +174,7 @@ nav button[aria-current="true"]{color:var(--fg);border-top-color:var(--fg)}
       <input class="lineq" id="shipQ" type="search" placeholder="Name oder MMSI" enterkeyhint="search" autocomplete="off" aria-label="Nach Schiffsname oder MMSI filtern">
     </div>
     <div class="status num" id="status" role="status">Lade Schiffe …</div>
+    <div class="news" id="hint" hidden><button id="hintOpen" type="button"><b>Hinweis: </b>Schiffe erscheinen ab Zoom 11 (ca. 20 km Umkreis) und werden nur für den sichtbaren Ausschnitt geladen.</button><button class="nx" id="hintX" type="button" aria-label="Hinweis schließen">×</button></div>
     <div class="news" id="news" hidden><button id="newsOpen" type="button"></button><button class="nx" id="newsX" type="button" aria-label="Hinweis schließen">×</button></div>
     <div class="track" id="track" hidden><button class="tbtn" id="trackOpen" type="button" aria-label="Verfolgtes Schiff anzeigen"></button><button class="tstop" id="trackStop" type="button" aria-label="Verfolgung beenden">×</button></div>
   </div>
@@ -314,7 +315,7 @@ const state={
   favs:store.get('favs',[]),
   onlyPlace:false,placeShips:new Set(),
   query:'',queryRaw:'',found:[],
-  ships:new Map(),meta:null,lastOk:0,err:null,note:null,
+  ships:new Map(),src:'live',liveErr:null,meta:null,lastOk:0,err:null,note:null,
   sel:null,        // {m,follow,dest,showData}
   tab:'map',sheet:null
 };
@@ -336,33 +337,89 @@ function setBase(){
 }
 setBase();dark.addEventListener('change',setBase);
 L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
-  {maxZoom:19,maxNativeZoom:18,attribution:'Seezeichen: © OpenSeaMap · Schiffe: aisstream.io'}).addTo(map);
+  {maxZoom:19,maxNativeZoom:18,attribution:'Seezeichen: © OpenSeaMap · Schiffe: Open Waters AIS · aisstream.io'}).addTo(map);
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const markers=new Map();
 let meMarker=null,placeMarker=null,route=null;
 
 /* ---------- Daten ---------- */
-let loadingData=false;
+/* Schiffe erst ab diesem Zoom (ca. 20 km Breite auf dem Handy) und nur für den sichtbaren Ausschnitt */
+const MIN_ZOOM=11;
+const LIVE='https://ais.openwaters.io/v1/vessels';
+let loadingData=false,liveFailAt=0,lastFile=0;
+const toSec=v=>{if(v==null)return null;if(typeof v==='number')return v>1e12?v/1000:v;const t=Date.parse(v);return isNaN(t)?null:t/1000;};
+const num=v=>typeof v==='number'&&isFinite(v)?v:null;
+function typeNum(t){
+  if(num(t)!=null)return t;
+  const x=String(t||'').toLowerCase();
+  if(/passenger/.test(x))return 60;if(/cargo/.test(x))return 70;if(/tanker/.test(x))return 80;if(/tug|towing/.test(x))return 52;
+  if(/pilot/.test(x))return 50;if(/sail/.test(x))return 36;if(/pleasure/.test(x))return 37;if(/fishing/.test(x))return 30;return 0;
+}
+/* Kielwasser auf dem Gerät: neuen Punkt nur bei spürbarer Bewegung */
+function addTrack(s,prev){
+  const tr=prev&&prev.tr?prev.tr.slice():[],n=tr.length;
+  if(n>=3&&dist([tr[n-3],tr[n-2]],[s.lat,s.lon])<30)return tr.length?tr:undefined;
+  tr.push(s.lat,s.lon,s.ts);
+  return tr.length>180?tr.slice(-180):tr;
+}
+function parseLive(j,prev){
+  const ships=new Map(),now=nowSec();
+  for(const f of(j&&Array.isArray(j.features)?j.features:[])){
+    const c=f.geometry&&f.geometry.coordinates,p=f.properties||{};
+    if(!c||!isFinite(c[0])||!isFinite(c[1])||!Number.isInteger(p.mmsi))continue;
+    const sog=num(p.sog),cog=num(p.cog),hdg=num(p.heading);
+    const s={m:p.mmsi,n:p.name?String(p.name).trim():undefined,t:typeNum(p.type),lat:c[1],lon:c[0],ts:toSec(p.seen)||now,cls:p.class||undefined,
+      sog:sog!=null&&sog<102.2?sog:null,cog:cog!=null&&cog<360?cog:null,hdg:hdg!=null&&hdg<360?hdg:null,st:num(p.nav_status)};
+    const o=prev.get(s.m);
+    if(o){if(!s.n)s.n=o.n;if(!s.t)s.t=o.t;s.d=o.d;s.eta=o.eta;s.l=o.l;s.w=o.w;s.dr=o.dr;s.imo=o.imo;s.cs=o.cs;}
+    s.tr=addTrack(s,o);
+    s.cat=catOf(s.t);s.name=s.n||'MMSI '+s.m;ships.set(s.m,s);
+  }
+  /* Verfolgtes und gemerkte Schiffe bleiben, auch wenn sie den Ausschnitt verlassen haben */
+  const keep=new Set(state.favs.map(f=>f.m));if(state.sel)keep.add(state.sel.m);
+  for(const m of keep)if(!ships.has(m)&&prev.has(m))ships.set(m,prev.get(m));
+  return ships;
+}
+async function loadLive(){
+  const b=map.getBounds().pad(.2);
+  const u=LIVE+'?bbox='+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(4)).join(',')+'&max_age=90m';
+  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),20000);
+  let r;try{r=await fetch(u,{signal:ctl.signal,headers:{accept:'application/json'}});}finally{clearTimeout(timer);}
+  if(r.status===429)throw new Error('zu viele Anfragen (429)');
+  if(!r.ok)throw new Error('Serverfehler '+r.status);
+  const j=await r.json();
+  state.ships=parseLive(j,state.ships);
+  state.meta={ok:true,live:true,generated:Math.floor(Date.now()/1000),truncated:!!j.truncated};
+  state.err=null;state.lastOk=Date.now();
+}
+async function loadFile(){
+  let r;
+  try{r=await fetch('data/ships.json?t='+Math.floor(Date.now()/60000),{cache:'no-cache'});}catch(e){throw new Error('keine Verbindung');}
+  if(r.status===404)throw new Error('missing');
+  if(!r.ok)throw new Error('Serverfehler '+r.status);
+  const j=await r.json(),ships=new Map();
+  for(const s of(Array.isArray(j.ships)?j.ships:[])){
+    if(s.lat==null||s.lon==null||s.ts==null)continue;
+    s.cat=catOf(s.t);s.name=s.n||'MMSI '+s.m;ships.set(s.m,s);
+  }
+  state.ships=ships;state.meta=j;state.err=null;state.lastOk=Date.now();lastFile=Date.now();
+}
 async function loadData(){
   if(document.hidden||loadingData)return;
+  if(state.src==='live'&&map.getZoom()<MIN_ZOOM){render();return;}   // nichts abfragen, solange man herausgezoomt ist
   loadingData=true;
   try{
-    let r;
-    try{r=await fetch('data/ships.json?t='+Math.floor(Date.now()/60000),{cache:'no-cache'});}catch(e){throw new Error('keine Verbindung');}
-    if(r.status===404)throw new Error('missing');
-    if(!r.ok)throw new Error('Serverfehler '+r.status);
-    const j=await r.json(),ships=new Map();
-    for(const s of(Array.isArray(j.ships)?j.ships:[])){
-      if(s.lat==null||s.lon==null||s.ts==null)continue;
-      s.cat=catOf(s.t);s.name=s.n||'MMSI '+s.m;ships.set(s.m,s);
+    if(state.src==='live'||Date.now()-liveFailAt>300000){
+      try{await loadLive();state.src='live';}
+      catch(e){if(e.name==='AbortError')return;liveFailAt=Date.now();state.src='file';state.liveErr=e.message;}
     }
-    state.ships=ships;state.meta=j;state.err=null;state.lastOk=Date.now();
+    if(state.src==='file'&&Date.now()-lastFile>55000)await loadFile();
     render();
     if(state.sheet==='ship')renderShipSheet();
     else if(state.sheet==='pass')paintPass(true);
     else if(state.sheet==='fav')renderFavs();
   }catch(e){
-    state.err=e.message==='missing'?'Noch keine Schiffsdaten veröffentlicht. Der Sammler läuft nach der Einrichtung alle 10 Minuten (siehe README).'
+    state.err=e.message==='missing'?'Keine Live-Schiffsdaten erreichbar und noch keine Datei veröffentlicht (siehe README).'
       :'Schiffsdaten: '+(e.message||'Fehler')+'. Neuer Versuch in einer Minute.';
     setStatus(state.err,true);
   }finally{loadingData=false;}
@@ -372,6 +429,7 @@ function note(text,err,ms){state.note={text,err:!!err,until:Date.now()+ms};setSt
 function statusLine(shown){
   const m=state.meta;if(!m)return null;
   if(m.ok===false&&m.reason==='no-key')return['Datenquelle noch nicht eingerichtet: Es fehlt der API-Schlüssel für aisstream.io (siehe README).',true];
+  if(m.live){let t='Live · Stand '+hhmm(m.generated*1000)+' · '+shown+(shown===1?' Schiff':' Schiffe');if(m.truncated)t+=' · Ausschnitt voll, näher heranzoomen';if(state.query&&!shown)t='Kein Schiff „'+state.queryRaw+'“ im Ausschnitt.';return[t,false];}
   const gen=m.generated*1000,age=(Date.now()-gen)/60000;
   if(age>45)return['Daten von '+new Date(gen).toLocaleString('de-DE',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})+'. Der Sammler läuft gerade nicht.',true];
   if(m.ok===false)return['Gerade keine AIS-Meldungen empfangen'+(m.error?' ('+m.error+')':'')+'.',true];
@@ -403,11 +461,11 @@ function iconFor(s,p,sel,fav,label){
 }
 let lastShown=0;
 function render(){
-  const now=nowSec(),favs=favSet(),z=map.getZoom(),bounds=map.getBounds().pad(.15),sel=state.sel;
+  const now=nowSec(),favs=favSet(),z=map.getZoom(),bounds=map.getBounds().pad(.15),sel=state.sel,gated=z<MIN_ZOOM;
   const list=[];
   for(const s of state.ships.values()){
     const isSel=!!sel&&sel.m===s.m;
-    if(!isSel&&!passes(s,favs))continue;
+    if(!isSel&&(gated||!passes(s,favs)))continue;
     const p=shipPos(s,now);
     if(!isSel&&!bounds.contains(p.ll))continue;
     list.push({s,p,isSel,fav:favs.has(s.m)});
@@ -432,6 +490,7 @@ function render(){
   }
   for(const[id,m]of markers)if(!seen.has(id)){map.removeLayer(m);markers.delete(id);}
   if(state.note&&Date.now()<state.note.until)setStatus(state.note.text,state.note.err);
+  else if(gated&&!state.err)setStatus('Schiffe erscheinen ab Zoom '+MIN_ZOOM+' (ca. 20 km Umkreis). Bitte näher heranzoomen.',false);
   else if(state.err)setStatus(state.err,true);
   else{const st=statusLine(lastShown);if(st)setStatus(st[0],st[1]);}
   if(sel&&sel.follow){
@@ -806,7 +865,7 @@ async function nameFromMap(c){
 function findShip(){
   const q=state.query;if(!q)return;
   const hits=[...state.ships.values()].filter(s=>matches(s,q)).sort((a,b)=>(isStill(a)?1:0)-(isStill(b)?1:0)||a.name.localeCompare(b.name));
-  if(!hits.length){note('Kein Schiff „'+state.queryRaw+'“ im Datenstand.',true,8000);return;}
+  if(!hits.length){note('Kein Schiff „'+state.queryRaw+'“ im geladenen Ausschnitt.',true,8000);return;}
   if(hits.length===1){selectShip(hits[0].m,true);return;}
   state.found=hits.slice(0,40);setTab('map',true);openSheet('find');
 }
@@ -907,12 +966,15 @@ $('locBtn').onclick=()=>locate(ll=>{
 });
 
 /* ---------- Takt ---------- */
+let moveT=null;
 /* Beim Folgen verschiebt render() selbst die Karte; dann nicht erneut rendern, sonst entsteht eine Schleife */
-map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();});
+map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
-setInterval(loadData,60000);
+setInterval(loadData,30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
+$('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
+if(!store.get('hint',0))$('hint').hidden=false;
 paintPlace();paintChips();loadData();loadNews();
 </script>
 </body>
