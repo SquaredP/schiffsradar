@@ -5,6 +5,7 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-22
 
+- Handy: Das Detailblatt öffnet kompakt und lässt sich über den Griff oben (antippen oder ziehen) auf halbe und volle Höhe bringen. Solange es offen ist, blenden sich Filterleiste und Statuszeile aus, die Karte bleibt größer sichtbar
 - Im Querformat auf Notebook und iPad erscheint das Detailblatt rechts neben der Karte statt darunter, wie im Flugradar. Die Karte behält so die volle Höhe; auf dem Handy bleibt alles unverändert
 - Schifffahrtszeichen sind antippbar (ab Zoom 13): Ein Tipp zeigt Art, Name, Farbe, Form, Feuer, Hinweise und weitere Angaben aus OpenStreetMap. Die Seite fragt dafür nur die nähere Umgebung der Tippstelle ab
 - Jedes Schiff zeigt Start und Ziel: Ziel und Ankunft laut AIS, Start = Stelle, an der das Schiff zuletzt lag (AIS meldet keinen Starthafen). Beide stehen im Schiffsblatt und als Marke auf der Karte. Ziel, Ankunft und Maße kommen auch bei Live-Daten dazu, weil die Seite sie aus der Sammlerdatei einblendet
