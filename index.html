@@ -977,7 +977,7 @@ function renderShipSheet(){
   trip.append(el('dt',null,'Start'),el('dd',null,isStill(s)?'liegt gerade (Start unbekannt)':og?(og.name===undefined?'Ort wird gesucht …':(og.name||'Position '+og.ll[0].toFixed(3)+', '+og.ll[1].toFixed(3)))+' · zuletzt liegend '+fmtEta(og.ts*1000):'nicht bekannt'));
   trip.append(el('dt',null,'Ziel'),el('dd',null,s.d?(sel.dest&&sel.dest.name?sel.dest.name:destLabel(s.d))+(et0&&et0>Date.now()-864e5?' · Ankunft '+fmtEta(et0):''):'nicht gemeldet'));
   const ph=isStill(s)?portOfShip(s):null;
-  if(ph){const bt=el('button','newslink',ph.name);bt.type='button';bt.style.margin='0';bt.onclick=()=>{portSel=ph;openSheet('port');};trip.append(el('dt',null,'Liegt in'),el('dd',null,PORT_KIND[ph.kind]+' '));trip.lastChild.appendChild(bt);}
+  if(ph){const bt=el('button','newslink',ph.name);bt.type='button';bt.style.margin='0';bt.onclick=()=>{pickPort(ph);};trip.append(el('dt',null,'Liegt in'),el('dd',null,PORT_KIND[ph.kind]+' '));trip.lastChild.appendChild(bt);}
   const pin=(row,ll)=>{if(!ll)return;const bt=el('button','newslink','Hafeninfos');bt.type='button';bt.style.margin='0 0 0 8px';bt.onclick=()=>openPortAt(ll);row.appendChild(bt);};
   pin(trip.children[1],og&&og.ll);pin(trip.children[3],sel.dest&&sel.dest.ll);
   body.appendChild(trip);
@@ -1312,9 +1312,16 @@ function paintPorts(){
     if(!lab&&h.kind!=='hafen')continue;
     const span=el('span',lab?'':'dot');span.appendChild(el('b',null,h.name));
     const m=L.marker([h.lat,h.lon],{icon:L.divIcon({className:'',html:'<span class="hfm">'+span.outerHTML+'</span>',iconSize:[0,0]}),keyboard:false,zIndexOffset:-400});
-    m.on('click',()=>{portSel=h;openSheet('port');});
+    m.on('click',()=>{pickPort(h);});
     portLayer.addLayer(m);
   }
+}
+/* Hafen auswählen: einem verfolgten Schiff wird nicht mehr gefolgt, die Karte zeigt den Hafen */
+function pickPort(h,fit){
+  portSel=h;
+  if(state.sel&&state.sel.follow){state.sel.follow=false;const fb=$('followBtn');if(fb)fb.setAttribute('aria-pressed','false');}
+  openSheet('port');
+  if(fit){const sh=$('sheet'),pad=sh&&!sh.hidden?Math.min(sh.offsetHeight,innerHeight*.6):0;map.fitBounds(L.latLngBounds([h.bb[0],h.bb[1]],[h.bb[2],h.bb[3]]),{paddingTopLeft:[40,150],paddingBottomRight:[40,40+pad],maxZoom:16});}
 }
 function shipsInPort(h){
   const pad=.0015,out=[];
@@ -1392,6 +1399,9 @@ function renderPort(){
     const sm=el('small'),a=el('a',null,'Wikipedia ↗');a.href=w.u;a.target='_blank';a.rel='noopener';
     sm.append('Text: ',a,' (CC BY-SA)');wk.appendChild(sm);
   });
+  const mk=el('button','btn pri','Als Mein Ort');mk.type='button';
+  mk.onclick=()=>{setPlace({name:h.name,lat:+h.lat.toFixed(5),lon:+h.lon.toFixed(5)});openSheet('pass');};
+  const act=el('div','acts');act.appendChild(mk);body.appendChild(act);
   const links=el('div','links'),web=t.website||t['contact:website']||t.url;
   if(web&&/^https?:\/\//.test(web)){const a=el('a',null,'Website ↗');a.href=web;a.target='_blank';a.rel='noopener';links.appendChild(a);}
   const o=el('a',null,'OpenStreetMap ↗');o.href='https://www.openstreetmap.org/'+(h.id[0]==='n'?'node':h.id[0]==='w'?'way':'relation')+'/'+h.id.slice(1);o.target='_blank';o.rel='noopener';links.appendChild(o);
@@ -1413,7 +1423,7 @@ async function openPortAt(ll){
     }catch(e){note('Hafen gerade nicht abrufbar.',true,5000);return;}
   }
   if(!h){note('In der Nähe ist im Kartenmaterial kein benannter Hafen eingetragen.',false,4000);return;}
-  portSel=h;openSheet('port');
+  pickPort(h,true);
 }
 
 /* Zeichen antippen: Die Kacheln sind Bilder, deshalb fragt die Seite beim Tippen die OpenStreetMap-Daten rund um die Stelle ab (Overpass, ein kleiner Umkreis) */
