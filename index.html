@@ -18,7 +18,7 @@
 :root{
   --bg:#f2f5f6; --surface:#ffffff; --line:#d3dbde; --fg:#152024; --muted:#5a6a70;
   --fracht:#1f64a8; --tanker:#b23a2e; --fahrgast:#1f8a4c; --dienst:#b86f06; --sonst:#7656a8;
-  --late:#c8202f; --ontime:#1f8a4c; --focus:#0b6bcb; --pegel:#0a7e8c; --hafen:#2f4f8f;
+  --late:#c8202f; --ontime:#1f8a4c; --focus:#0b6bcb; --pegel:#0a7e8c; --hafen:#2f4f8f; --club:#a8541a; --lock:#6a3fa0;
   --ui:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   --sign:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   color-scheme:light;
@@ -26,7 +26,7 @@
 @media (prefers-color-scheme:dark){:root{
   --bg:#13181c; --surface:#1c2328; --line:#323c42; --fg:#e8eef0; --muted:#97a6ab;
   --fracht:#78b4ee; --tanker:#f0796c; --fahrgast:#55c486; --dienst:#e5a84a; --sonst:#b89ce2;
-  --late:#f0616c; --ontime:#55c486; --focus:#7db8f5; --pegel:#4cc3d1; --hafen:#9db8ee; color-scheme:dark;
+  --late:#f0616c; --ontime:#55c486; --focus:#7db8f5; --pegel:#4cc3d1; --hafen:#9db8ee; --club:#f0a96b; --lock:#c0a3ee; color-scheme:dark;
 }}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -87,6 +87,12 @@ a{color:var(--focus)}
   border-radius:7px;padding:2px 6px;font:700 11px/1.1 var(--sign);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .hfm span::before{content:"⚓";color:var(--hafen);font-size:12px}
 .hfm span.dot{padding:3px 4px}.hfm span.dot b{display:none}
+.pom{position:absolute;left:0;top:0}
+.pom span{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;background:var(--surface);color:var(--fg);border:1.5px solid var(--pc);
+  border-radius:7px;padding:2px 6px;font:700 11px/1.1 var(--sign);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.pom span::before{content:attr(data-i);font-size:12px}
+.pom span.dot{padding:3px 4px}.pom span.dot b{display:none}
+.pom.club span{--pc:var(--club)}.pom.lock span{--pc:var(--lock)}
 .wikibox{margin:12px 0 0;font-size:14px;line-height:1.45}.wikibox small{display:block;color:var(--muted);margin-top:4px}
 .lineq{flex:none;width:130px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 11px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
 .status{align-self:flex-start;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:12px;color:var(--muted)}
@@ -118,6 +124,8 @@ a{color:var(--focus)}
 .sm.sel b{font-size:14px;z-index:2}
 .c-pegel{--c:var(--pegel)}
 .c-hafen{--c:var(--hafen)}
+.c-club{--c:var(--club)}
+.c-lock{--c:var(--lock)}
 .c-fracht{--c:var(--fracht)} .c-tanker{--c:var(--tanker)} .c-fahrgast{--c:var(--fahrgast)} .c-dienst{--c:var(--dienst)} .c-sonst{--c:var(--sonst)}
 @media (prefers-color-scheme:dark){.sm b{color:#101416}}
 .rlab{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.18);
@@ -222,6 +230,8 @@ nav button[aria-current="true"]{color:var(--fg);border-top-color:var(--fg)}
       <button class="chip c-sonst" id="seaChip" type="button" aria-pressed="true"><i></i>Zeichen</button>
       <button class="chip c-pegel" id="pegelChip" type="button"><i></i>Pegel</button>
       <button class="chip c-hafen" id="portChip" type="button" aria-pressed="true"><i></i>Häfen</button>
+      <button class="chip c-club" id="clubChip" type="button" aria-pressed="true"><i></i>Vereine</button>
+      <button class="chip c-lock" id="lockChip" type="button" aria-pressed="true"><i></i>Schleusen</button>
       <input class="lineq" id="shipQ" type="search" placeholder="Name oder MMSI" enterkeyhint="search" autocomplete="off" aria-label="Nach Schiffsname oder MMSI filtern">
     </div>
     <div class="menu" id="menu" hidden></div>
@@ -535,7 +545,7 @@ function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className
 const nowSec=()=>Date.now()/1000;
 
 const state={
-  cats:new Set(store.get('cats',CAT_ORDER)),sea:store.get('sea',true),ports:store.get('ports',true),pegel:store.get('pegel',true),
+  cats:new Set(store.get('cats',CAT_ORDER)),sea:store.get('sea',true),ports:store.get('ports',true),clubs:store.get('clubs',true),locks:store.get('locks',true),pegel:store.get('pegel',true),
   still:store.get('still',false),
   place:store.get('place',null),
   favs:store.get('favs',[]),
@@ -1430,6 +1440,100 @@ async function openPortAt(ll){
 }
 
 
+/* ---------- Ruder- und Kanuvereine sowie Schleusen (OpenStreetMap), antippbar mit Telefonnummer ---------- */
+const POI_KIND={club:{n:'Verein',i:'🚣',cls:'club'},lock:{n:'Schleuse',i:'🔒',cls:'lock'}};
+const poiLayer=L.layerGroup().addTo(map);
+let poiData=[],poiBox=null,poiAt=0,poiBusy=false,poiSel=null;
+const POI_Q=b=>'('+
+  'nwr["club"="sport"]["sport"~"rowing|canoe|kayak"]["name"]'+b+';'+
+  'nwr["sport"~"rowing|canoe|kayak"]["leisure"~"sports_centre|sports_club|club"]["name"]'+b+';'+
+  'nwr["building"="boathouse"]["name"]'+b+';'+
+  'nwr["lock"="yes"]["name"]'+b+';nwr["waterway"="lock_gate"]["name"]'+b+';nwr["seamark:type"="lock_basin"]["name"]'+b+';'+
+  'nwr["waterway"="lock"]["name"]'+b+';)';
+function parsePois(els){
+  const out=[];
+  for(const e of els){
+    const t=e.tags||{},name=t.name;if(!name)continue;
+    const lat=e.lat!=null?e.lat:e.center&&e.center.lat,lon=e.lon!=null?e.lon:e.center&&e.center.lon;if(lat==null)continue;
+    const kind=(t.lock==='yes'||t.waterway==='lock_gate'||t.waterway==='lock'||t['seamark:type']==='lock_basin')?'lock':'club';
+    const it={id:e.type[0]+e.id,name,kind,lat,lon,t};
+    const dup=out.find(o=>o.kind===kind&&norm(o.name)===norm(name)&&dist([o.lat,o.lon],[lat,lon])<(kind==='lock'?1500:300));
+    if(dup)dup.t={...it.t,...dup.t};else out.push(it);
+  }
+  return out;
+}
+async function loadPois(){
+  if(!(state.clubs||state.locks)||map.getZoom()<PORT_ZOOM||document.hidden||poiBusy)return;
+  if(poiBox&&poiBox.contains(map.getBounds())&&Date.now()-poiAt<PORT_TTL)return;
+  const b=map.getBounds().pad(.4);poiBusy=true;
+  try{
+    const bb='('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+')';
+    const r=await overpass('[out:json][timeout:25];'+POI_Q(bb)+';out tags center 1500;');
+    poiData=parsePois((await r.json()).elements||[]);poiBox=b;poiAt=Date.now();
+    kv.set('pois',{at:poiAt,box:[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()],data:poiData});
+  }catch(e){poiAt=Date.now()-PORT_TTL+300000;}finally{poiBusy=false;}
+  paintPois();
+}
+function paintPois(){
+  poiLayer.clearLayers();
+  if(map.getZoom()<PORT_ZOOM)return;
+  const b=map.getBounds().pad(.1),lab=map.getZoom()>=PORT_LABEL_ZOOM;
+  for(const h of poiData){
+    if(h.kind==='club'?!state.clubs:!state.locks)continue;
+    if(!b.contains([h.lat,h.lon]))continue;
+    const k=POI_KIND[h.kind],span=el('span',lab?'':'dot');span.dataset.i=k.i;span.appendChild(el('b',null,h.name));
+    const m=L.marker([h.lat,h.lon],{icon:L.divIcon({className:'',html:'<span class="pom '+k.cls+'">'+span.outerHTML+'</span>',iconSize:[0,0]}),keyboard:false,zIndexOffset:-300});
+    m.on('click',()=>{pickPoi(h);});
+    poiLayer.addLayer(m);
+  }
+}
+function pickPoi(h){
+  poiSel=h;
+  if(state.sel&&state.sel.follow){state.sel.follow=false;const fb=$('followBtn');if(fb)fb.setAttribute('aria-pressed','false');}
+  openSheet('poi');
+}
+function telHref(v){return 'tel:'+String(v).split(';')[0].replace(/[^+\d]/g,'');}
+function renderPoi(){
+  const h=poiSel;if(!h)return;const t=h.t,k=POI_KIND[h.kind];
+  $('shTitle').textContent=h.name;
+  const body=$('shBody');body.replaceChildren();
+  const dl=el('dl','facts'),add=(a,v)=>{if(v==null||v==='')return;dl.append(el('dt',null,a),el('dd',null,v));};
+  add('Art',k.n);
+  const phone=t.phone||t['contact:phone']||t['contact:mobile']||t.mobile;
+  const tel=phone?String(phone).split(';').map(x=>x.trim()).filter(Boolean):[];
+  if(tel.length){const dd=el('dd');tel.forEach((x,i)=>{if(i)dd.append(', ');const a=el('a',null,x);a.href=telHref(x);dd.appendChild(a);});dl.append(el('dt',null,'Telefon'),dd);}
+  const mail=t.email||t['contact:email'];
+  if(mail){const dd=el('dd'),a=el('a',null,mail);a.href='mailto:'+mail;dd.appendChild(a);dl.append(el('dt',null,'E-Mail'),dd);}
+  const vhf=t['vhf_channel']||t['contact:vhf']||t['seamark:radio_station:channel']||t['communication:vhf']||t['seamark:lock_basin:vhf'];
+  add('UKW-Kanal',vhf);add('Betreiber',t.operator);
+  if(h.kind==='lock'){
+    add('Länge',t.maxlength?t.maxlength+' m':null);add('Breite',t.maxwidth?t.maxwidth+' m':null);
+    add('Durchfahrtshöhe',t.maxheight?t.maxheight+' m':null);add('Hub',(t['lock:height']||t.height)?(t['lock:height']||t.height)+' m':null);
+    add('Nummer',t.lock_ref||t.ref);
+  }
+  const addr=[[t['addr:street'],t['addr:housenumber']].filter(Boolean).join(' '),[t['addr:postcode'],t['addr:city']].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  add('Anschrift',addr);add('Öffnungszeiten',t.opening_hours);
+  let g=null,gd=Infinity;
+  for(const x of gauges.values()){const d=dist([h.lat,h.lon],[x.lat,x.lon]);if(d<gd){gd=d;g=x;}}
+  if(g&&gd<15000)add('Nächster Pegel',g.name+' · '+Math.round(g.value)+' '+g.unit+' · '+nf(gd/1000,gd<10000?1:0)+' km');
+  if(dl.children.length)body.appendChild(dl);
+  const wk=el('div','wikibox');body.appendChild(wk);
+  wikiFor(t).then(w=>{
+    if(poiSel!==h||state.sheet!=='poi'||!w)return;
+    wk.append(w.x);const sm=el('small'),a=el('a',null,'Wikipedia ↗');a.href=w.u;a.target='_blank';a.rel='noopener';sm.append('Text: ',a,' (CC BY-SA)');wk.appendChild(sm);
+  });
+  const acts=el('div','acts');
+  if(tel.length){const c=el('a','btn pri','Anrufen');c.href=telHref(tel[0]);c.style.textDecoration='none';acts.appendChild(c);}
+  const mk=el('button','btn','Als Mein Ort');mk.type='button';
+  mk.onclick=()=>{setPlace({name:h.name,lat:+h.lat.toFixed(5),lon:+h.lon.toFixed(5)});openSheet('pass');};
+  acts.appendChild(mk);body.appendChild(acts);
+  const links=el('div','links'),web=t.website||t['contact:website']||t.url;
+  if(web&&/^https?:\/\//.test(web)){const a=el('a',null,'Website ↗');a.href=web;a.target='_blank';a.rel='noopener';links.appendChild(a);}
+  const o=el('a',null,'OpenStreetMap ↗');o.href='https://www.openstreetmap.org/'+(h.id[0]==='n'?'node':h.id[0]==='w'?'way':'relation')+'/'+h.id.slice(1);o.target='_blank';o.rel='noopener';links.appendChild(o);
+  body.appendChild(links);
+  if(!tel.length&&!web&&!mail)body.appendChild(el('p','hint','Telefon und Website sind in OpenStreetMap für diesen Eintrag nicht hinterlegt.'));
+}
+
 /* ---------- Pegel auf der Karte (PEGELONLINE, WSV) ---------- */
 const PEGEL_ZOOM=10;
 const gauges=new Map(),gaugeLayer=L.layerGroup().addTo(map);
@@ -1553,6 +1657,7 @@ function renderAbout(){
   li(el('b',null,'Grundkarte: '),'© Esri und © ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL).');
   li(el('b',null,'Flussverlauf, Wasserwege und Ortssuche: '),'© ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL), über Overpass und Nominatim.');
   li(el('b',null,'Schifffahrtszeichen: '),'© ',a('OpenSeaMap','https://www.openseamap.org'),'.');
+  li(el('b',null,'Vereine und Schleusen: '),'© ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL), von Freiwilligen gepflegt. Angaben können fehlen oder veraltet sein.');
   li(el('b',null,'Häfen: '),'© ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL); Beschreibungen aus ',a('Wikipedia','https://de.wikipedia.org'),' (CC BY-SA), soweit der Hafen dort verknüpft ist.');
   li(el('b',null,'Pegelstände: '),'© Wasserstraßen- und Schifffahrtsverwaltung des Bundes (WSV), über ',a('PEGELONLINE','https://www.pegelonline.wsv.de'),'.');
   box.appendChild(ul);
@@ -1593,6 +1698,7 @@ function openSheet(kind){
   if(kind==='news')renderNews();
   if(kind==='about')renderAbout();
     if(kind==='port')renderPort();
+  if(kind==='poi')renderPoi();
   if(kind==='gauge')renderGauge();
   map.invalidateSize();paintTrack();
 }
@@ -1618,6 +1724,8 @@ function paintChips(){
   $('seaChip').setAttribute('aria-pressed',String(state.sea));
   $('pegelChip').setAttribute('aria-pressed',String(state.pegel));
   $('portChip').setAttribute('aria-pressed',String(state.ports));
+  $('clubChip').setAttribute('aria-pressed',String(state.clubs));
+  $('lockChip').setAttribute('aria-pressed',String(state.locks));
 }
 /* Aufklappmenüs: „Typen“ (welche Schiffe) und „Namen“ (bei welchen Typen das Namensschild steht) */
 let menuKind=null;
@@ -1661,6 +1769,8 @@ $('chips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
   if(c.id==='typeBtn')return openMenu('type');
   if(c.id==='seaChip'){state.sea=!state.sea;store.set('sea',state.sea);applySea();}
+  if(c.id==='clubChip'){state.clubs=!state.clubs;store.set('clubs',state.clubs);paintPois();}
+  if(c.id==='lockChip'){state.locks=!state.locks;store.set('locks',state.locks);paintPois();}
   if(c.id==='portChip'){state.ports=!state.ports;store.set('ports',state.ports);if(state.ports)loadPorts();paintPorts();}
   if(c.id==='pegelChip'){state.pegel=!state.pegel;store.set('pegel',state.pegel);if(state.pegel)loadGauges();paintGauges();}
   paintChips();render();paintPass(true);
@@ -1695,17 +1805,18 @@ let moveT=null;
     }else last={t,p};
   });
   map.on('dblclick',e=>map.setZoomAround(e.containerPoint,Math.min(map.getMaxZoom()||19,map.getZoom()+1)));}
-map.on('zoomend',()=>{paintGauges();paintPorts();});
-map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadWays();loadPorts();},900);});
+map.on('zoomend',()=>{paintGauges();paintPorts();paintPois();});
+map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadWays();loadPorts();loadPois();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
-setInterval(()=>{loadData();loadGauges();loadWays();loadPorts();},10000);
+setInterval(()=>{loadData();loadGauges();loadWays();loadPorts();loadPois();},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
 $('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
 if(!store.get('hint',0))$('hint').hidden=false;
 async function restoreCache(){
-  const [sh,wy,pt]=await Promise.all([kv.get('ships'),kv.get('ways'),kv.get('ports')]);
+  const [sh,wy,pt,po]=await Promise.all([kv.get('ships'),kv.get('ways'),kv.get('ports'),kv.get('pois')]);
   if(pt&&pt.data&&pt.box&&Date.now()-pt.at<PORT_TTL){portData=pt.data;portBox=L.latLngBounds([pt.box[0],pt.box[1]],[pt.box[2],pt.box[3]]);portAt=pt.at;}
+  if(po&&po.data&&po.box&&Date.now()-po.at<PORT_TTL){poiData=po.data;poiBox=L.latLngBounds([po.box[0],po.box[1]],[po.box[2],po.box[3]]);poiAt=po.at;}
   const gs=store.get('gauges',[]);for(const g of gs)if(g&&g.number!=null)gauges.set(g.number,g);
   if(wy&&wy.els&&wy.box&&Date.now()-wy.at<7*864e5){const net=buildNet(wy.els);if(net.edges.length){WN=net;wver++;wState='ok';wBox=L.latLngBounds([wy.box[0],wy.box[1]],[wy.box[2],wy.box[3]]);wAt=wy.at;}}
   if(sh&&Array.isArray(sh.ships)&&sh.ships.length&&Date.now()-sh.at<3*3600*1000&&!state.ships.size){
@@ -1714,7 +1825,7 @@ async function restoreCache(){
   }
 }
 paintPlace();paintChips();applySea();
-Promise.race([restoreCache(),new Promise(r=>setTimeout(r,1500))]).catch(()=>{}).then(()=>{render();paintGauges();paintPorts();loadData();loadGauges();loadWays();loadPorts();loadNews();});
+Promise.race([restoreCache(),new Promise(r=>setTimeout(r,1500))]).catch(()=>{}).then(()=>{render();paintGauges();paintPorts();paintPois();loadData();loadGauges();loadWays();loadPorts();loadPois();loadNews();});
 </script>
 </body>
 </html>
