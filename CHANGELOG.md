@@ -3,6 +3,12 @@
 Neue Funktionen und Korrekturen am Schiffsradar. Neueste Einträge oben.
 Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hinweis an.
 
+## 2026-11-22
+
+- Schifffahrtszeichen sind antippbar (ab Zoom 13): Ein Tipp zeigt Art, Name, Farbe, Form, Feuer, Hinweise und weitere Angaben aus OpenStreetMap. Die Seite fragt dafür nur die nähere Umgebung der Tippstelle ab
+- Jedes Schiff zeigt Start und Ziel: Ziel und Ankunft laut AIS, Start = Stelle, an der das Schiff zuletzt lag (AIS meldet keinen Starthafen). Beide stehen im Schiffsblatt und als Marke auf der Karte. Ziel, Ankunft und Maße kommen auch bei Live-Daten dazu, weil die Seite sie aus der Sammlerdatei einblendet
+- Korrektur: Nach dem Verschieben der Karte wurden die Flussverläufe nicht mehr nachgeladen (Fehler seit der Umstellung des Zeichen-Schalters)
+
 ## 2026-11-21
 
 - Die Rechteinhaber unten rechts auf der Karte nennen nur noch die Daten, die gerade zu sehen sind (Seezeichen, Pegel, Schiffe mit der jeweiligen Quelle). Vorher verschwanden Pegel und Schiffsquelle, sobald die Zeichen aus waren

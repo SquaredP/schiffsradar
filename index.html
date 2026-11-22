@@ -558,7 +558,7 @@ function parseLive(j,prev){
     const s={m:p.mmsi,n:p.name?String(p.name).trim():undefined,t:typeNum(p.type),lat:c[1],lon:c[0],ts:toSec(p.seen)||now,cls:p.class||undefined,
       sog:sog!=null&&sog<102.2?sog:null,cog:cog!=null&&cog<360?cog:null,hdg:hdg!=null&&hdg<360?hdg:null,st:num(p.nav_status)};
     const o=prev.get(s.m);
-    if(o){if(!s.n)s.n=o.n;if(!s.t)s.t=o.t;s.d=o.d;s.eta=o.eta;s.l=o.l;s.w=o.w;s.dr=o.dr;s.imo=o.imo;s.cs=o.cs;}
+    if(o){if(!s.n)s.n=o.n;if(!s.t)s.t=o.t;s.d=o.d;s.eta=o.eta;s.l=o.l;s.w=o.w;s.dr=o.dr;s.imo=o.imo;s.cs=o.cs;s.o=o.o;}
     s.tr=addTrack(s,o);
     s.cat=catOf(s.t);s.name=s.n||'MMSI '+s.m;ships.set(s.m,s);
   }
@@ -567,10 +567,59 @@ function parseLive(j,prev){
   for(const m of keep)if(!ships.has(m)&&prev.has(m))ships.set(m,prev.get(m));
   return ships;
 }
+/* Ziel, Ankunft, Abmessungen und Start kommen nicht aus den Live-Daten. Die Seite liest sie aus data/ships.json (Sammler, aisstream)
+   und legt sie über die Live-Schiffe. Start = Stelle, an der das Schiff zuletzt still lag (Sammler 24/7, dazu eigene Beobachtung auf dem Gerät). */
+const statics=new Map(),origins=new Map(store.get('orig',[]).map(a=>[a[0],a.slice(1)]));
+let staticAt=0,staticBusy=false;
+const STATIC_KEYS=['d','eta','l','w','dr','imo','cs'];
+function applyStatics(){
+  for(const s of state.ships.values()){
+    const st=statics.get(s.m);if(!st)continue;
+    for(const k of STATIC_KEYS)if(s[k]==null&&st[k]!=null)s[k]=st[k];
+    if(!s.n&&st.n){s.n=st.n;s.name=st.n;}
+    if(!s.t&&st.t){s.t=st.t;s.cat=catOf(s.t);}
+    if(st.o&&(!s.o||st.o[2]>s.o[2]))s.o=st.o;
+  }
+}
+async function loadStatic(){
+  if(staticBusy||Date.now()-staticAt<300000||document.hidden)return;
+  staticBusy=true;
+  try{
+    const r=await fetch('data/ships.json?t='+Math.floor(Date.now()/300000),{cache:'no-cache'});
+    if(r.ok){const j=await r.json();statics.clear();for(const x of(Array.isArray(j.ships)?j.ships:[]))if(Number.isInteger(x.m))statics.set(x.m,x);applyStatics();if(state.sheet==='ship')renderShipSheet();}
+  }catch(e){}
+  staticAt=Date.now();staticBusy=false;
+}
+function noteOrigins(){
+  let ch=false;
+  for(const s of state.ships.values())if(isStill(s)&&s.ts!=null){const o=origins.get(s.m);if(!o||o[2]<s.ts){origins.set(s.m,[s.lat,s.lon,s.ts]);ch=true;}}
+  if(ch){const cut=nowSec()-48*3600;for(const[k,v]of origins)if(v[2]<cut)origins.delete(k);}
+}
+/* Start der aktuellen Fahrt: zuletzt liegend gesehen, aber nicht dort, wo das Schiff jetzt liegt */
+function originOf(s){
+  if(isStill(s))return null;
+  let o=s.o,mine=origins.get(s.m);
+  if(mine&&(!o||mine[2]>o[2]))o=mine;
+  if(!o||dist([o[0],o[1]],[s.lat,s.lon])<400)return null;
+  return{ll:[o[0],o[1]],ts:o[2]};
+}
+/* Orte benennen (Nominatim, gecacht) */
+const revCache=store.get('rev',{});
+async function revName(ll){
+  const key=ll[0].toFixed(3)+','+ll[1].toFixed(3);
+  if(key in revCache)return revCache[key];
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&accept-language=de&lat='+ll[0].toFixed(5)+'&lon='+ll[1].toFixed(5));
+    const j=await r.json(),a=j.address||{};
+    const n=j.name||a.industrial||a.harbour||a.suburb||a.village||a.town||a.city||null,c=a.city||a.town||a.village||'';
+    revCache[key]=n?(c&&n!==c?n+', '+c:n):null;store.set('rev',revCache);return revCache[key];
+  }catch(e){return undefined;}
+}
 let shipsSavedAt=0;
 function saveShips(){
   if(Date.now()-shipsSavedAt<15000)return;shipsSavedAt=Date.now();
   kv.set('ships',{at:Date.now(),src:state.src,ships:[...state.ships.values()].map(({_sn,...r})=>r)});
+  store.set('orig',[...origins].slice(-4000).map(([k,v])=>[k,...v]));
 }
 async function loadLive(){
   const b=map.getBounds().pad(.2);
@@ -582,6 +631,7 @@ async function loadLive(){
   const j=await r.json();
   state.ships=parseLive(j,state.ships);
   state.meta={ok:true,live:true,generated:Math.floor(Date.now()/1000),truncated:!!j.truncated};
+  applyStatics();noteOrigins();loadStatic();
   state.err=null;state.lastOk=Date.now();state.fresh=true;saveShips();
 }
 async function loadFile(){
@@ -594,7 +644,7 @@ async function loadFile(){
     if(s.lat==null||s.lon==null||s.ts==null)continue;
     s.cat=catOf(s.t);s.name=s.n||'MMSI '+s.m;ships.set(s.m,s);
   }
-  state.ships=ships;state.meta=j;state.err=null;state.lastOk=Date.now();lastFile=Date.now();state.fresh=true;saveShips();
+  state.ships=ships;state.meta=j;state.err=null;state.lastOk=Date.now();lastFile=Date.now();state.fresh=true;noteOrigins();saveShips();
 }
 async function loadData(){
   if(document.hidden||loadingData)return;
@@ -722,7 +772,7 @@ function selectShip(m,fly){
   setTab('map',true);openSheet('ship');
   const p=shipPos(s,nowSec());
   if(fly||!map.getBounds().contains(p.ll))map.setView(p.ll,Math.max(map.getZoom(),13));
-  buildRoute();render();resolveDest(state.sel);
+  buildRoute();render();resolveDest(state.sel);resolveOrigin(state.sel);
 }
 function clearSel(){state.sel=null;clearRoute();for(const m of markers.values())m._k='';render();}
 function clearRoute(){if(route){map.removeLayer(route.group);route=null;}}
@@ -792,6 +842,8 @@ function paintRoute(){
     }
     setLabel('dest',d.ll,txt,true);
   }else{route.dest.setLatLngs([]);setLabel('dest',null);}
+  const og=sel.orig;
+  if(og&&og.ll)setLabel('start',og.ll,'Start'+(og.name?' '+og.name:''),false);else setLabel('start',null);
 }
 /* Gesamtstrecke zum Ziel planen: Gewässernetz zwischen Schiff und Ziel laden, kürzesten Weg suchen.
    Neu geplant wird bei jeder neuen Meldung des Schiffs. */
@@ -835,12 +887,22 @@ function fmtEta(t){
 function showRoute(){
   const sel=state.sel,s=sel&&state.ships.get(sel.m);if(!s)return;
   const g=routeGeometry(s,nowSec()),pts=g.wake.concat(g.ahead);
+  if(sel.orig&&sel.orig.ll)pts.push(sel.orig.ll);
   if(sel.rt&&sel.rt.pts)pts.push(...sel.rt.pts);
   else if(sel.dest&&sel.dest.ll&&dist(g.p.ll,sel.dest.ll)<400000)pts.push(sel.dest.ll);
   if(pts.length<2)return;
   sel.follow=false;const fb=$('followBtn');if(fb)fb.setAttribute('aria-pressed','false');
   const sh=$('sheet'),pad=sh&&!sh.hidden?Math.min(sh.offsetHeight,innerHeight*.6):0;
   map.fitBounds(L.latLngBounds(pts),{paddingTopLeft:[60,150],paddingBottomRight:[60,40+pad],maxZoom:15});
+}
+async function resolveOrigin(sel){
+  const s=state.ships.get(sel.m);if(!s)return;
+  const o=originOf(s);
+  if(!o){sel.orig=null;renderShipSheet();return;}
+  sel.orig={ll:o.ll,ts:o.ts,name:undefined};renderShipSheet();
+  const n=await revName(o.ll);
+  if(state.sel!==sel)return;
+  sel.orig.name=n||null;paintRoute();renderShipSheet();
 }
 /* Ziel laut AIS in einen Ort auflösen: zuerst UN/LOCODE-Tabelle, sonst OpenStreetMap-Suche (Nominatim, gecacht) */
 const destCache=store.get('dest',{});
@@ -874,6 +936,11 @@ function renderShipSheet(){
   const row=el('div','nowrow');
   row.append(Object.assign(el('div','now'),{id:'shipNow'}),Object.assign(el('div','speed num'),{id:'shipSpeed'}));
   body.appendChild(row);
+  const trip=el('dl','facts trip'),og=sel.orig;
+  const et0=etaTime(s.eta,Date.now());
+  trip.append(el('dt',null,'Start'),el('dd',null,isStill(s)?'liegt gerade (Start unbekannt)':og?(og.name===undefined?'Ort wird gesucht …':(og.name||'Position '+og.ll[0].toFixed(3)+', '+og.ll[1].toFixed(3)))+' · zuletzt liegend '+fmtEta(og.ts*1000):'nicht bekannt'));
+  trip.append(el('dt',null,'Ziel'),el('dd',null,s.d?(sel.dest&&sel.dest.name?sel.dest.name:destLabel(s.d))+(et0&&et0>Date.now()-864e5?' · Ankunft '+fmtEta(et0):''):'nicht gemeldet'));
+  body.appendChild(trip);
   const acts=el('div','acts');
   const fol=el('button','btn','Karte folgt dem Schiff');fol.type='button';fol.id='followBtn';fol.setAttribute('aria-pressed',String(sel.follow));
   fol.onclick=()=>{sel.follow=!sel.follow;fol.setAttribute('aria-pressed',String(sel.follow));render();};
@@ -1158,6 +1225,88 @@ function applySea(){
   paintAttrib();
 }
 
+/* Zeichen antippen: Die Kacheln sind Bilder, deshalb fragt die Seite beim Tippen die OpenStreetMap-Daten rund um die Stelle ab (Overpass, ein kleiner Umkreis) */
+const MARK_TYPE={buoy_lateral:'Lateraltonne',buoy_cardinal:'Kardinaltonne',buoy_isolated_danger:'Tonne für Einzelgefahr',buoy_safe_water:'Tonne für sicheres Wasser',buoy_special_purpose:'Sondertonne',
+  buoy_installation:'Anlagentonne',beacon_lateral:'Laterale Bake',beacon_cardinal:'Kardinalbake',beacon_isolated_danger:'Bake für Einzelgefahr',beacon_safe_water:'Bake für sicheres Wasser',beacon_special_purpose:'Spezialbake',
+  light_major:'Leuchtfeuer',light_minor:'Leuchtfeuer (klein)',light_float:'Feuerschiff/-ponton',light_vessel:'Feuerschiff',lighthouse:'Leuchtturm',landmark:'Landmarke',notice:'Tafel / Binnenschifffahrtszeichen',
+  bridge:'Brücke',lock_basin:'Schleuse',gate:'Tor / Sperrwerk',weir:'Wehr',dam:'Damm',harbour:'Hafen',berth:'Liegeplatz',small_craft_facility:'Anlage für Sportboote',mooring:'Festmacheeinrichtung',
+  anchorage:'Ankerplatz',anchor_berth:'Ankerliegeplatz',wreck:'Wrack',rock:'Felsen',obstruction:'Hindernis',cable_overhead:'Freileitung',cable_submarine:'Seekabel',pipeline_overhead:'Rohrleitung (oben)',
+  pipeline_submarine:'Rohrleitung (unten)',distance_mark:'Kilometermarke',signal_station_traffic:'Verkehrssignalstelle',signal_station_warning:'Warnsignalstelle',radar_station:'Radarstation',
+  ferry_route:'Fährverbindung',fairway:'Fahrwasser',recommended_track:'Empfohlener Kurs',restricted_area:'Sperrgebiet',pilot_boarding:'Lotsenübernahme',harbour_basin:'Hafenbecken',building:'Bauwerk'};
+const MARK_COL={white:'weiß',red:'rot',green:'grün',yellow:'gelb',black:'schwarz',blue:'blau',orange:'orange',grey:'grau',brown:'braun',amber:'bernstein',violet:'violett',magenta:'magenta',pink:'rosa'};
+const MARK_CAT={port:'Backbord (links)',starboard:'Steuerbord (rechts)',preferred_channel_port:'Gabelung, bevorzugt links',preferred_channel_starboard:'Gabelung, bevorzugt rechts',north:'Nord',east:'Ost',south:'Süd',west:'West'};
+const MARK_SHAPE={pillar:'Spiere',spar:'Spierentonne',conical:'Spitztonne',can:'Stumpftonne',sphere:'Kugel',barrel:'Fass',stake:'Stange',tower:'Turm',cairn:'Steinhaufen',pole:'Pfahl',perch:'Stange',beacon:'Bake',lattice:'Gittermast',buoyant:'Schwimmkörper',cylinder:'Zylinder',cone:'Kegel'};
+const MARK_PAT={horizontal:'waagerecht gestreift',vertical:'senkrecht gestreift',diagonal:'schräg gestreift',squared:'kariert',border:'mit Rand',stripes:'gestreift'};
+const mTxt=(v,map)=>String(v).split(';').map(x=>map&&map[x.trim()]||x.trim().replace(/_/g,' ')).join(', ');
+const nice=k=>k.replace(/^seamark:/,'').replace(/[:_]/g,' ');
+let markHi=null,clickT=0,markBusy=false,dblAt=0;
+function clearMarkHi(){if(markHi){map.removeLayer(markHi);markHi=null;}}
+async function seaPick(ll){
+  if(!state.sea||map.getZoom()<13||markBusy)return;
+  const p=map.latLngToContainerPoint(ll),q2=map.containerPointToLatLng([p.x+26,p.y]);
+  const R=Math.max(12,Math.round(dist([ll.lat,ll.lng],[q2.lat,q2.lng])));
+  markBusy=true;note('Suche Zeichen …',false,15000);
+  try{
+    const c=ll.lat.toFixed(6)+','+ll.lng.toFixed(6);
+    const r=await overpass('[out:json][timeout:15];(node["seamark:type"](around:'+R+','+c+');way["seamark:type"](around:'+R+','+c+'););out geom tags;');
+    const els=(await r.json()).elements||[];
+    let best=null;
+    for(const e of els){
+      const pts=e.type==='node'?[[e.lat,e.lon]]:(e.geometry||[]).map(g=>[g.lat,g.lon]);
+      let d=Infinity,at=null;for(const x of pts){const y=dist([ll.lat,ll.lng],x);if(y<d){d=y;at=x;}}
+      if(at&&(!best||d<best.d))best={d,e,at};
+    }
+    state.note=null;
+    if(!best){note('Hier ist im Kartenmaterial kein Zeichen eingetragen.',false,3500);return;}
+    state.mark={type:best.e.type,id:best.e.id,tags:best.e.tags||{},ll:best.at};
+    clearMarkHi();markHi=L.circleMarker(best.at,{radius:16,weight:3,color:cssVar('--focus')||'#2c6fb5',fill:false,interactive:false}).addTo(map);
+    openSheet('mark');
+  }catch(e){note('Zeichen gerade nicht abrufbar.',true,5000);}finally{markBusy=false;}
+}
+function lightText(t,pre){
+  const g=k=>t[pre+k];if(!g('character')&&!g('colour'))return null;
+  let s=(g('character')||'')+(g('group')?'('+g('group')+')':'');
+  if(g('colour'))s+=' '+String(g('colour')).split(';').map(x=>({white:'W',red:'R',green:'G',yellow:'Y',blue:'B',orange:'Or',violet:'Vi'}[x]||x)).join('');
+  if(g('period'))s+=' '+g('period')+' s';
+  return s.trim();
+}
+function renderMark(){
+  const m=state.mark;if(!m)return;const t=m.tags,used=new Set(['seamark:type','name','seamark:name']);
+  const typ=MARK_TYPE[t['seamark:type']]||String(t['seamark:type']).replace(/_/g,' ');
+  const nm=t['seamark:name']||t.name;
+  $('shTitle').replaceChildren(el('span',null,typ),nm?el('span',null,' · '+nm):'');
+  const body=$('shBody');body.replaceChildren();
+  const dl=el('dl','facts'),add=(k,v)=>{if(v==null||v==='')return;dl.append(el('dt',null,k),el('dd',null,v));};
+  const take=(...ks)=>{for(const k of ks){const v=t[k];if(v!=null){ks.forEach(x=>used.add(x));return v;}}return null;};
+  const ty=t['seamark:type'];
+  add('Art',typ);add('Name',nm);
+  const cat=take('seamark:'+ty+':category');add('Kategorie',cat?mTxt(cat,{...MARK_CAT,...MARK_PAT}):null);
+  const col=take('seamark:'+ty+':colour');add('Farbe',col?mTxt(col,MARK_COL):null);
+  const pat=take('seamark:'+ty+':colour_pattern');add('Farbmuster',pat?mTxt(pat,MARK_PAT):null);
+  const sh=take('seamark:'+ty+':shape');add('Form',sh?mTxt(sh,MARK_SHAPE):null);
+  const tm=take('seamark:topmark:shape');const tc=take('seamark:topmark:colour');add('Toppzeichen',tm?mTxt(tm,MARK_SHAPE)+(tc?' ('+mTxt(tc,MARK_COL)+')':''):null);
+  for(const k of Object.keys(t))if(/^seamark:light/.test(k))used.add(k);
+  const lt=lightText(t,'seamark:light:');add('Feuer',lt);
+  if(t['seamark:light:height'])add('Feuerhöhe',t['seamark:light:height']+' m');
+  if(t['seamark:light:range'])add('Tragweite',t['seamark:light:range']+' sm');
+  const nf2=['category','function','information','addition','impact'];
+  for(const k of nf2){const v=take('seamark:notice:'+k);add('Tafel · '+({category:'Kategorie',function:'Funktion',information:'Hinweis',addition:'Zusatz',impact:'Wirkung'}[k]),v?mTxt(v):null);}
+  const inf=take('seamark:information','description','note');add('Hinweis',inf);
+  const ref=take('seamark:ref','ref');add('Kennung',ref);
+  const cl=take('seamark:bridge:clearance_height','seamark:clearance_height','maxheight');add('Durchfahrtshöhe',cl?cl+' m':null);
+  const clw=take('seamark:bridge:clearance_width','seamark:clearance_width');add('Durchfahrtsbreite',clw?clw+' m':null);
+  const dm=take('seamark:distance_mark:distance','seamark:distance_mark:value');add('Kilometer',dm);
+  const rest=Object.keys(t).filter(k=>/^seamark:/.test(k)&&!used.has(k)).slice(0,10);
+  for(const k of rest)add(nice(k),String(t[k]).slice(0,120).replace(/_/g,' '));
+  if(!dl.children.length)add('Hinweis','Zu diesem Zeichen liegen keine weiteren Angaben vor.');
+  body.appendChild(dl);
+  const links=el('div','links'),a=el('a',null,'Eintrag in OpenStreetMap ↗');
+  a.href='https://www.openstreetmap.org/'+m.type+'/'+m.id;a.target='_blank';a.rel='noopener';links.appendChild(a);body.appendChild(links);
+  body.appendChild(el('p','hint','Angaben aus OpenStreetMap/OpenSeaMap, von Freiwilligen gepflegt. Keine Navigationsgrundlage.'));
+}
+map.on('click',e=>{clearTimeout(clickT);if(Date.now()-dblAt<700)return;if(state.sea&&map.getZoom()>=13)clickT=setTimeout(()=>seaPick(e.latlng),330);});
+map.on('dblclick movestart zoomstart',()=>clearTimeout(clickT));
+
 /* ---------- Pegel auf der Karte (PEGELONLINE, WSV) ---------- */
 const PEGEL_ZOOM=10;
 const gauges=new Map(),gaugeLayer=L.layerGroup().addTo(map);
@@ -1303,11 +1452,12 @@ function openSheet(kind){
   if(kind==='find')renderFind();
   if(kind==='news')renderNews();
   if(kind==='about')renderAbout();
+  if(kind==='mark')renderMark();
   if(kind==='gauge')renderGauge();
   map.invalidateSize();paintTrack();
 }
 /* Schließen klappt nur das Blatt ein. Das Schiff bleibt verfolgt, bis die Kapsel oben mit × beendet wird. */
-function closeSheet(){state.sheet=null;$('sheet').hidden=true;setTab('map',true);map.invalidateSize();paintTrack();}
+function closeSheet(){clearMarkHi();state.sheet=null;$('sheet').hidden=true;setTab('map',true);map.invalidateSize();paintTrack();}
 function setTab(tab,quiet){
   state.tab=tab;
   document.querySelectorAll('nav button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.tab===tab)));
@@ -1397,13 +1547,13 @@ let moveT=null;
     if(e.pointerType==='mouse'||e.target.closest('.leaflet-control,.leaflet-popup'))return;
     const t=Date.now(),p=[e.clientX,e.clientY];
     if(last&&t-last.t<320&&Math.hypot(p[0]-last.p[0],p[1]-last.p[1])<30){
-      last=null;e.preventDefault();
+      last=null;dblAt=Date.now();clearTimeout(clickT);e.preventDefault();
       map.setZoomAround(map.mouseEventToContainerPoint(e),Math.min(map.getMaxZoom()||19,map.getZoom()+1));
     }else last={t,p};
   });
   map.on('dblclick',e=>map.setZoomAround(e.containerPoint,Math.min(map.getMaxZoom()||19,map.getZoom()+1)));}
 map.on('zoomend',()=>{paintGauges();});
-map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadSea();loadWays();},900);});
+map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadWays();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
 setInterval(()=>{loadData();loadGauges();loadWays();},10000);

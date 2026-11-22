@@ -65,6 +65,7 @@ function setPosition(s, p, ts, cls) {
   s.hdg = Number.isFinite(p.TrueHeading) && p.TrueHeading < 360 ? p.TrueHeading : null;
   if (cls === 'A' && Number.isFinite(p.NavigationalStatus)) s.st = p.NavigationalStatus;
   addTrack(s);
+  if (isStill(s)) s.o = [s.lat, s.lon, s.ts]; // zuletzt liegend gesehen: Start der aktuellen Fahrt
   return true;
 }
 
