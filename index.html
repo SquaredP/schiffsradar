@@ -1429,87 +1429,6 @@ async function openPortAt(ll){
   pickPort(h,true);
 }
 
-/* Zeichen antippen: Die Kacheln sind Bilder, deshalb fragt die Seite beim Tippen die OpenStreetMap-Daten rund um die Stelle ab (Overpass, ein kleiner Umkreis) */
-const MARK_TYPE={buoy_lateral:'Lateraltonne',buoy_cardinal:'Kardinaltonne',buoy_isolated_danger:'Tonne für Einzelgefahr',buoy_safe_water:'Tonne für sicheres Wasser',buoy_special_purpose:'Sondertonne',
-  buoy_installation:'Anlagentonne',beacon_lateral:'Laterale Bake',beacon_cardinal:'Kardinalbake',beacon_isolated_danger:'Bake für Einzelgefahr',beacon_safe_water:'Bake für sicheres Wasser',beacon_special_purpose:'Spezialbake',
-  light_major:'Leuchtfeuer',light_minor:'Leuchtfeuer (klein)',light_float:'Feuerschiff/-ponton',light_vessel:'Feuerschiff',lighthouse:'Leuchtturm',landmark:'Landmarke',notice:'Tafel / Binnenschifffahrtszeichen',
-  bridge:'Brücke',lock_basin:'Schleuse',gate:'Tor / Sperrwerk',weir:'Wehr',dam:'Damm',harbour:'Hafen',berth:'Liegeplatz',small_craft_facility:'Anlage für Sportboote',mooring:'Festmacheeinrichtung',
-  anchorage:'Ankerplatz',anchor_berth:'Ankerliegeplatz',wreck:'Wrack',rock:'Felsen',obstruction:'Hindernis',cable_overhead:'Freileitung',cable_submarine:'Seekabel',pipeline_overhead:'Rohrleitung (oben)',
-  pipeline_submarine:'Rohrleitung (unten)',distance_mark:'Kilometermarke',signal_station_traffic:'Verkehrssignalstelle',signal_station_warning:'Warnsignalstelle',radar_station:'Radarstation',
-  ferry_route:'Fährverbindung',fairway:'Fahrwasser',recommended_track:'Empfohlener Kurs',restricted_area:'Sperrgebiet',pilot_boarding:'Lotsenübernahme',harbour_basin:'Hafenbecken',building:'Bauwerk'};
-const MARK_COL={white:'weiß',red:'rot',green:'grün',yellow:'gelb',black:'schwarz',blue:'blau',orange:'orange',grey:'grau',brown:'braun',amber:'bernstein',violet:'violett',magenta:'magenta',pink:'rosa'};
-const MARK_CAT={port:'Backbord (links)',starboard:'Steuerbord (rechts)',preferred_channel_port:'Gabelung, bevorzugt links',preferred_channel_starboard:'Gabelung, bevorzugt rechts',north:'Nord',east:'Ost',south:'Süd',west:'West'};
-const MARK_SHAPE={pillar:'Spiere',spar:'Spierentonne',conical:'Spitztonne',can:'Stumpftonne',sphere:'Kugel',barrel:'Fass',stake:'Stange',tower:'Turm',cairn:'Steinhaufen',pole:'Pfahl',perch:'Stange',beacon:'Bake',lattice:'Gittermast',buoyant:'Schwimmkörper',cylinder:'Zylinder',cone:'Kegel'};
-const MARK_PAT={horizontal:'waagerecht gestreift',vertical:'senkrecht gestreift',diagonal:'schräg gestreift',squared:'kariert',border:'mit Rand',stripes:'gestreift'};
-const mTxt=(v,map)=>String(v).split(';').map(x=>map&&map[x.trim()]||x.trim().replace(/_/g,' ')).join(', ');
-const nice=k=>k.replace(/^seamark:/,'').replace(/[:_]/g,' ');
-let markHi=null,clickT=0,markBusy=false,dblAt=0;
-function clearMarkHi(){if(markHi){map.removeLayer(markHi);markHi=null;}}
-async function seaPick(ll){
-  if(!state.sea||map.getZoom()<13||markBusy)return;
-  const p=map.latLngToContainerPoint(ll),q2=map.containerPointToLatLng([p.x+26,p.y]);
-  const R=Math.max(12,Math.round(dist([ll.lat,ll.lng],[q2.lat,q2.lng])));
-  markBusy=true;note('Suche Zeichen …',false,15000);
-  try{
-    const c=ll.lat.toFixed(6)+','+ll.lng.toFixed(6);
-    const r=await overpass('[out:json][timeout:15];(node["seamark:type"](around:'+R+','+c+');way["seamark:type"](around:'+R+','+c+'););out geom tags;');
-    const els=(await r.json()).elements||[];
-    let best=null;
-    for(const e of els){
-      const pts=e.type==='node'?[[e.lat,e.lon]]:(e.geometry||[]).map(g=>[g.lat,g.lon]);
-      let d=Infinity,at=null;for(const x of pts){const y=dist([ll.lat,ll.lng],x);if(y<d){d=y;at=x;}}
-      if(at&&(!best||d<best.d))best={d,e,at};
-    }
-    state.note=null;
-    if(!best){note('Hier ist im Kartenmaterial kein Zeichen eingetragen.',false,3500);return;}
-    state.mark={type:best.e.type,id:best.e.id,tags:best.e.tags||{},ll:best.at};
-    clearMarkHi();markHi=L.circleMarker(best.at,{radius:16,weight:3,color:cssVar('--focus')||'#2c6fb5',fill:false,interactive:false}).addTo(map);
-    openSheet('mark');
-  }catch(e){note('Zeichen gerade nicht abrufbar.',true,5000);}finally{markBusy=false;}
-}
-function lightText(t,pre){
-  const g=k=>t[pre+k];if(!g('character')&&!g('colour'))return null;
-  let s=(g('character')||'')+(g('group')?'('+g('group')+')':'');
-  if(g('colour'))s+=' '+String(g('colour')).split(';').map(x=>({white:'W',red:'R',green:'G',yellow:'Y',blue:'B',orange:'Or',violet:'Vi'}[x]||x)).join('');
-  if(g('period'))s+=' '+g('period')+' s';
-  return s.trim();
-}
-function renderMark(){
-  const m=state.mark;if(!m)return;const t=m.tags,used=new Set(['seamark:type','name','seamark:name']);
-  const typ=MARK_TYPE[t['seamark:type']]||String(t['seamark:type']).replace(/_/g,' ');
-  const nm=t['seamark:name']||t.name;
-  $('shTitle').replaceChildren(el('span',null,typ),nm?el('span',null,' · '+nm):'');
-  const body=$('shBody');body.replaceChildren();
-  const dl=el('dl','facts'),add=(k,v)=>{if(v==null||v==='')return;dl.append(el('dt',null,k),el('dd',null,v));};
-  const take=(...ks)=>{for(const k of ks){const v=t[k];if(v!=null){ks.forEach(x=>used.add(x));return v;}}return null;};
-  const ty=t['seamark:type'];
-  add('Art',typ);add('Name',nm);
-  const cat=take('seamark:'+ty+':category');add('Kategorie',cat?mTxt(cat,{...MARK_CAT,...MARK_PAT}):null);
-  const col=take('seamark:'+ty+':colour');add('Farbe',col?mTxt(col,MARK_COL):null);
-  const pat=take('seamark:'+ty+':colour_pattern');add('Farbmuster',pat?mTxt(pat,MARK_PAT):null);
-  const sh=take('seamark:'+ty+':shape');add('Form',sh?mTxt(sh,MARK_SHAPE):null);
-  const tm=take('seamark:topmark:shape');const tc=take('seamark:topmark:colour');add('Toppzeichen',tm?mTxt(tm,MARK_SHAPE)+(tc?' ('+mTxt(tc,MARK_COL)+')':''):null);
-  for(const k of Object.keys(t))if(/^seamark:light/.test(k))used.add(k);
-  const lt=lightText(t,'seamark:light:');add('Feuer',lt);
-  if(t['seamark:light:height'])add('Feuerhöhe',t['seamark:light:height']+' m');
-  if(t['seamark:light:range'])add('Tragweite',t['seamark:light:range']+' sm');
-  const nf2=['category','function','information','addition','impact'];
-  for(const k of nf2){const v=take('seamark:notice:'+k);add('Tafel · '+({category:'Kategorie',function:'Funktion',information:'Hinweis',addition:'Zusatz',impact:'Wirkung'}[k]),v?mTxt(v):null);}
-  const inf=take('seamark:information','description','note');add('Hinweis',inf);
-  const ref=take('seamark:ref','ref');add('Kennung',ref);
-  const cl=take('seamark:bridge:clearance_height','seamark:clearance_height','maxheight');add('Durchfahrtshöhe',cl?cl+' m':null);
-  const clw=take('seamark:bridge:clearance_width','seamark:clearance_width');add('Durchfahrtsbreite',clw?clw+' m':null);
-  const dm=take('seamark:distance_mark:distance','seamark:distance_mark:value');add('Kilometer',dm);
-  const rest=Object.keys(t).filter(k=>/^seamark:/.test(k)&&!used.has(k)).slice(0,10);
-  for(const k of rest)add(nice(k),String(t[k]).slice(0,120).replace(/_/g,' '));
-  if(!dl.children.length)add('Hinweis','Zu diesem Zeichen liegen keine weiteren Angaben vor.');
-  body.appendChild(dl);
-  const links=el('div','links'),a=el('a',null,'Eintrag in OpenStreetMap ↗');
-  a.href='https://www.openstreetmap.org/'+m.type+'/'+m.id;a.target='_blank';a.rel='noopener';links.appendChild(a);body.appendChild(links);
-  body.appendChild(el('p','hint','Angaben aus OpenStreetMap/OpenSeaMap, von Freiwilligen gepflegt. Keine Navigationsgrundlage.'));
-}
-map.on('click',e=>{clearTimeout(clickT);if(Date.now()-dblAt<700)return;if(state.sea&&map.getZoom()>=13)clickT=setTimeout(()=>seaPick(e.latlng),330);});
-map.on('dblclick movestart zoomstart',()=>clearTimeout(clickT));
 
 /* ---------- Pegel auf der Karte (PEGELONLINE, WSV) ---------- */
 const PEGEL_ZOOM=10;
@@ -1673,13 +1592,12 @@ function openSheet(kind){
   if(kind==='find')renderFind();
   if(kind==='news')renderNews();
   if(kind==='about')renderAbout();
-  if(kind==='mark')renderMark();
-  if(kind==='port')renderPort();
+    if(kind==='port')renderPort();
   if(kind==='gauge')renderGauge();
   map.invalidateSize();paintTrack();
 }
 /* Schließen klappt nur das Blatt ein. Das Schiff bleibt verfolgt, bis die Kapsel oben mit × beendet wird. */
-function closeSheet(){clearMarkHi();state.sheet=null;$('sheet').hidden=true;setTab('map',true);map.invalidateSize();paintTrack();}
+function closeSheet(){state.sheet=null;$('sheet').hidden=true;setTab('map',true);map.invalidateSize();paintTrack();}
 function setTab(tab,quiet){
   state.tab=tab;
   document.querySelectorAll('nav button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.tab===tab)));
@@ -1772,7 +1690,7 @@ let moveT=null;
     if(e.pointerType==='mouse'||e.target.closest('.leaflet-control,.leaflet-popup'))return;
     const t=Date.now(),p=[e.clientX,e.clientY];
     if(last&&t-last.t<320&&Math.hypot(p[0]-last.p[0],p[1]-last.p[1])<30){
-      last=null;dblAt=Date.now();clearTimeout(clickT);e.preventDefault();
+      last=null;e.preventDefault();
       map.setZoomAround(map.mouseEventToContainerPoint(e),Math.min(map.getMaxZoom()||19,map.getZoom()+1));
     }else last={t,p};
   });

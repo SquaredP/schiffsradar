@@ -5,6 +5,7 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-23
 
+- Zurückgenommen: Schifffahrtszeichen sind nicht mehr antippbar und zeigen keine Zusatzinformationen. „Zeichen“ bleibt ein einfacher Schalter, der die Zeichen komplett ein- oder ausblendet
 - Neues Symbol: ein stilisierter Radar mit Schiff im Browser-Tab und auf dem Home-Bildschirm. Der Hintergrund im Browser-Tab ist transparent, das Symbol sitzt mittig
 - Mein Ort: Ein kleines × am Ende des Feldes setzt den Ort zurück
 - Häfen lassen sich im Hafenblatt als „Mein Ort“ wählen (Vorbeifahrten und Entfernungen beziehen sich dann auf den Hafen)
