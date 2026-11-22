@@ -5,6 +5,7 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-23
 
+- Neues Symbol: ein stilisierter Radar mit Schiff im Browser-Tab und auf dem Home-Bildschirm
 - Mein Ort: Ein kleines × am Ende des Feldes setzt den Ort zurück
 - Häfen lassen sich im Hafenblatt als „Mein Ort“ wählen (Vorbeifahrten und Entfernungen beziehen sich dann auf den Hafen)
 - Wird ein Hafen geöffnet, folgt die Karte einem verfolgten Schiff nicht mehr. „Hafeninfos“ aus Start oder Ziel zeigt den Hafen auf der Karte
