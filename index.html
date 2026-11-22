@@ -15,7 +15,7 @@
 :root{
   --bg:#f2f5f6; --surface:#ffffff; --line:#d3dbde; --fg:#152024; --muted:#5a6a70;
   --fracht:#1f64a8; --tanker:#b23a2e; --fahrgast:#1f8a4c; --dienst:#b86f06; --sonst:#7656a8;
-  --late:#c8202f; --ontime:#1f8a4c; --focus:#0b6bcb; --pegel:#0a7e8c;
+  --late:#c8202f; --ontime:#1f8a4c; --focus:#0b6bcb; --pegel:#0a7e8c; --hafen:#2f4f8f;
   --ui:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   --sign:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   color-scheme:light;
@@ -23,7 +23,7 @@
 @media (prefers-color-scheme:dark){:root{
   --bg:#13181c; --surface:#1c2328; --line:#323c42; --fg:#e8eef0; --muted:#97a6ab;
   --fracht:#78b4ee; --tanker:#f0796c; --fahrgast:#55c486; --dienst:#e5a84a; --sonst:#b89ce2;
-  --late:#f0616c; --ontime:#55c486; --focus:#7db8f5; --pegel:#4cc3d1; color-scheme:dark;
+  --late:#f0616c; --ontime:#55c486; --focus:#7db8f5; --pegel:#4cc3d1; --hafen:#9db8ee; color-scheme:dark;
 }}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -73,6 +73,12 @@ a{color:var(--focus)}
   border-radius:4px;padding:2px 5px;font:700 12px/1 var(--sign);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .pgm span::before{content:"";width:7px;height:7px;background:var(--pegel);transform:rotate(45deg);flex:none}
 .pgm span.dot{padding:4px}.pgm span.dot::before{margin:0}
+.hfm{position:absolute;left:0;top:0}
+.hfm span{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;background:var(--surface);color:var(--fg);border:1.5px solid var(--hafen);
+  border-radius:7px;padding:2px 6px;font:700 11px/1.1 var(--sign);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.hfm span::before{content:"⚓";color:var(--hafen);font-size:12px}
+.hfm span.dot{padding:3px 4px}.hfm span.dot b{display:none}
+.wikibox{margin:12px 0 0;font-size:14px;line-height:1.45}.wikibox small{display:block;color:var(--muted);margin-top:4px}
 .lineq{flex:none;width:130px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 11px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
 .status{align-self:flex-start;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:12px;color:var(--muted)}
 .status.err{color:var(--late);border-color:var(--late)}
@@ -102,6 +108,7 @@ a{color:var(--focus)}
 .sm.sel::before{content:"";position:absolute;left:-17px;top:-17px;width:34px;height:34px;border-radius:50%;border:3px solid var(--focus);box-sizing:border-box}
 .sm.sel b{font-size:14px;z-index:2}
 .c-pegel{--c:var(--pegel)}
+.c-hafen{--c:var(--hafen)}
 .c-fracht{--c:var(--fracht)} .c-tanker{--c:var(--tanker)} .c-fahrgast{--c:var(--fahrgast)} .c-dienst{--c:var(--dienst)} .c-sonst{--c:var(--sonst)}
 @media (prefers-color-scheme:dark){.sm b{color:#101416}}
 .rlab{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.18);
@@ -205,6 +212,7 @@ nav button[aria-current="true"]{color:var(--fg);border-top-color:var(--fg)}
       <button class="chip" id="typeBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="typeTxt">Typen</span> ▾</button>
       <button class="chip c-sonst" id="seaChip" type="button" aria-pressed="true"><i></i>Zeichen</button>
       <button class="chip c-pegel" id="pegelChip" type="button"><i></i>Pegel</button>
+      <button class="chip c-hafen" id="portChip" type="button" aria-pressed="true"><i></i>Häfen</button>
       <input class="lineq" id="shipQ" type="search" placeholder="Name oder MMSI" enterkeyhint="search" autocomplete="off" aria-label="Nach Schiffsname oder MMSI filtern">
     </div>
     <div class="menu" id="menu" hidden></div>
@@ -518,7 +526,7 @@ function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className
 const nowSec=()=>Date.now()/1000;
 
 const state={
-  cats:new Set(store.get('cats',CAT_ORDER)),sea:store.get('sea',true),pegel:store.get('pegel',true),
+  cats:new Set(store.get('cats',CAT_ORDER)),sea:store.get('sea',true),ports:store.get('ports',true),pegel:store.get('pegel',true),
   still:store.get('still',false),
   place:store.get('place',null),
   favs:store.get('favs',[]),
@@ -962,6 +970,10 @@ function renderShipSheet(){
   const et0=etaTime(s.eta,Date.now());
   trip.append(el('dt',null,'Start'),el('dd',null,isStill(s)?'liegt gerade (Start unbekannt)':og?(og.name===undefined?'Ort wird gesucht …':(og.name||'Position '+og.ll[0].toFixed(3)+', '+og.ll[1].toFixed(3)))+' · zuletzt liegend '+fmtEta(og.ts*1000):'nicht bekannt'));
   trip.append(el('dt',null,'Ziel'),el('dd',null,s.d?(sel.dest&&sel.dest.name?sel.dest.name:destLabel(s.d))+(et0&&et0>Date.now()-864e5?' · Ankunft '+fmtEta(et0):''):'nicht gemeldet'));
+  const ph=isStill(s)?portOfShip(s):null;
+  if(ph){const bt=el('button','newslink',ph.name);bt.type='button';bt.style.margin='0';bt.onclick=()=>{portSel=ph;openSheet('port');};trip.append(el('dt',null,'Liegt in'),el('dd',null,PORT_KIND[ph.kind]+' '));trip.lastChild.appendChild(bt);}
+  const pin=(row,ll)=>{if(!ll)return;const bt=el('button','newslink','Hafeninfos');bt.type='button';bt.style.margin='0 0 0 8px';bt.onclick=()=>openPortAt(ll);row.appendChild(bt);};
+  pin(trip.children[1],og&&og.ll);pin(trip.children[3],sel.dest&&sel.dest.ll);
   body.appendChild(trip);
   const acts=el('div','acts');
   const fol=el('button','btn','Karte folgt dem Schiff');fol.type='button';fol.id='followBtn';fol.setAttribute('aria-pressed',String(sel.follow));
@@ -1247,6 +1259,157 @@ function applySea(){
   paintAttrib();
 }
 
+/* ---------- Häfen (OpenStreetMap), Hafenblatt mit Schiffen im Hafen, Pegel und Wikipedia ---------- */
+const PORT_ZOOM=11,PORT_LABEL_ZOOM=13,PORT_TTL=7*864e5;
+const PORT_KIND={hafen:'Hafen',becken:'Hafenbecken',marina:'Sportboothafen',faehre:'Fähranleger'};
+const CARGO={general:'Stückgut',container:'Container',liquid_bulk:'Flüssiggut',dry_bulk:'Schüttgut',passengers:'Passagiere',vehicles:'Fahrzeuge',oil:'Öl',chemical:'Chemie',bulk:'Schüttgut',cargo:'Güter',roro:'Roll-on/Roll-off',fishing:'Fischerei'};
+const portLayer=L.layerGroup().addTo(map);
+let portData=[],portBox=null,portAt=0,portBusy=false,portSel=null;
+const portFilter=b=>'(nwr["harbour"="yes"]'+b+';nwr["landuse"="harbour"]'+b+';nwr["industrial"="port"]'+b+';nwr["landuse"="port"]'+b+';nwr["seamark:type"="harbour"]'+b+';nwr["leisure"="marina"]'+b+';nwr["amenity"="ferry_terminal"]'+b+';nwr["waterway"="dock"]["name"]'+b+';)';
+function portKindOf(t){return t.industrial==='port'||t.landuse==='port'||t.landuse==='harbour'||t['seamark:type']==='harbour'||t.harbour==='yes'&&!t.leisure&&!t.amenity&&!t.waterway?'hafen':t.waterway==='dock'?'becken':t.leisure==='marina'?'marina':t.amenity==='ferry_terminal'?'faehre':'hafen';}
+const KIND_RANK={hafen:0,becken:1,marina:2,faehre:3};
+/* Overpass-Antwort -> benannte Häfen; mehrere Einträge desselben Namens in der Nähe werden zusammengefasst */
+function parsePorts(els){
+  const out=[];
+  for(const e of els){
+    const t=e.tags||{},name=t.name||t['seamark:name'];if(!name)continue;
+    const bb=e.bounds?[e.bounds.minlat,e.bounds.minlon,e.bounds.maxlat,e.bounds.maxlon]:e.lat!=null?[e.lat,e.lon,e.lat,e.lon]:null;if(!bb)continue;
+    const it={id:e.type[0]+e.id,name,kind:portKindOf(t),bb,lat:(bb[0]+bb[2])/2,lon:(bb[1]+bb[3])/2,t};
+    const dup=out.find(o=>norm(o.name)===norm(name)&&dist([o.lat,o.lon],[it.lat,it.lon])<2500);
+    if(dup){
+      dup.t={...it.t,...dup.t};
+      dup.bb=[Math.min(dup.bb[0],bb[0]),Math.min(dup.bb[1],bb[1]),Math.max(dup.bb[2],bb[2]),Math.max(dup.bb[3],bb[3])];
+      dup.lat=(dup.bb[0]+dup.bb[2])/2;dup.lon=(dup.bb[1]+dup.bb[3])/2;
+      if(KIND_RANK[it.kind]<KIND_RANK[dup.kind])dup.kind=it.kind;
+    }else out.push(it);
+  }
+  return out;
+}
+async function loadPorts(){
+  if(!state.ports||map.getZoom()<PORT_ZOOM||document.hidden||portBusy)return;
+  if(portBox&&portBox.contains(map.getBounds())&&Date.now()-portAt<PORT_TTL)return;
+  const b=map.getBounds().pad(.4);portBusy=true;
+  try{
+    const bb='('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+')';
+    const r=await overpass('[out:json][timeout:25];'+portFilter(bb)+';out tags bb 1500;');
+    portData=parsePorts((await r.json()).elements||[]);portBox=b;portAt=Date.now();
+    kv.set('ports',{at:portAt,box:[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()],data:portData});
+  }catch(e){portAt=Date.now()-PORT_TTL+300000;}finally{portBusy=false;}
+  paintPorts();
+}
+function paintPorts(){
+  portLayer.clearLayers();
+  if(!state.ports||map.getZoom()<PORT_ZOOM)return;
+  const b=map.getBounds().pad(.1),z=map.getZoom(),lab=z>=PORT_LABEL_ZOOM;
+  for(const h of portData){
+    if(!b.contains([h.lat,h.lon]))continue;
+    if(!lab&&h.kind!=='hafen')continue;
+    const span=el('span',lab?'':'dot');span.appendChild(el('b',null,h.name));
+    const m=L.marker([h.lat,h.lon],{icon:L.divIcon({className:'',html:'<span class="hfm">'+span.outerHTML+'</span>',iconSize:[0,0]}),keyboard:false,zIndexOffset:-400});
+    m.on('click',()=>{portSel=h;openSheet('port');});
+    portLayer.addLayer(m);
+  }
+}
+function shipsInPort(h){
+  const pad=.0015,out=[];
+  for(const s of state.ships.values()){
+    if(s.lat>=h.bb[0]-pad&&s.lat<=h.bb[2]+pad&&s.lon>=h.bb[1]-pad&&s.lon<=h.bb[3]+pad)out.push(s);
+  }
+  return out;
+}
+function portOfShip(s){
+  let best=null;
+  for(const h of portData){
+    if(s.lat<h.bb[0]-.0012||s.lat>h.bb[2]+.0012||s.lon<h.bb[1]-.0012||s.lon>h.bb[3]+.0012)continue;
+    const a=(h.bb[2]-h.bb[0])*(h.bb[3]-h.bb[1]);
+    if(!best||a<best.a)best={h,a};   // kleinste Fläche = genauester Eintrag (Becken vor Gesamthafen)
+  }
+  return best?best.h:null;
+}
+const wikiCache=store.get('wiki',{});
+async function wikiFor(t){
+  let lang='de',title=null;
+  const wp=t.wikipedia;
+  if(wp&&/^[a-z-]+:/.test(wp)){lang=wp.split(':')[0];title=wp.slice(lang.length+1);}
+  else if(t.wikidata){
+    const k='wd:'+t.wikidata;
+    if(!(k in wikiCache)){
+      try{
+        const r=await fetch('https://www.wikidata.org/w/api.php?action=wbgetentities&props=sitelinks&sitefilter=dewiki|enwiki&format=json&origin=*&ids='+encodeURIComponent(t.wikidata));
+        const e=((await r.json()).entities||{})[t.wikidata]||{},sl=e.sitelinks||{};
+        wikiCache[k]=sl.dewiki?'de:'+sl.dewiki.title:sl.enwiki?'en:'+sl.enwiki.title:null;
+      }catch(e){return undefined;}
+    }
+    const v=wikiCache[k];if(!v)return null;lang=v.split(':')[0];title=v.slice(lang.length+1);
+  }
+  if(!title)return null;
+  const key=lang+':'+title;
+  if(!(key in wikiCache)){
+    try{
+      const r=await fetch('https://'+lang+'.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(title.replace(/ /g,'_')));
+      if(!r.ok)throw new Error(r.status);
+      const j=await r.json();
+      wikiCache[key]=j.extract?{x:j.extract.slice(0,700),d:j.description||'',u:(j.content_urls&&j.content_urls.desktop&&j.content_urls.desktop.page)||''}:null;
+    }catch(e){return undefined;}
+  }
+  store.set('wiki',wikiCache);
+  return wikiCache[key];
+}
+function renderPort(){
+  const h=portSel;if(!h)return;const t=h.t;
+  $('shTitle').textContent=h.name;
+  const body=$('shBody');body.replaceChildren();
+  const dl=el('dl','facts'),add=(k,v)=>{if(v==null||v==='')return;dl.append(el('dt',null,k),el('dd',null,v));};
+  add('Art',PORT_KIND[h.kind]);
+  const cargo=[t.cargo,t.port,t['port:cargo']].filter(Boolean).join(';').split(';').map(x=>CARGO[x.trim()]||x.trim().replace(/_/g,' ')).filter((x,i,a)=>x&&a.indexOf(x)===i).join(', ');
+  add('Betreiber',t.operator);add('Güter / Verkehr',cargo);
+  add('Liegeplätze',t['capacity:berths']||t.capacity||t['seamark:harbour:berths']);
+  const addr=[[t['addr:street'],t['addr:housenumber']].filter(Boolean).join(' '),[t['addr:postcode'],t['addr:city']].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  add('Anschrift',addr);add('Öffnungszeiten',t.opening_hours);add('Telefon',t.phone||t['contact:phone']);
+  add('UN/LOCODE',t['ref:locode']||t['un:locode']||t.locode);
+  const ships=shipsInPort(h),still=ships.filter(isStill).length;
+  add('Jetzt im Hafenbereich',ships.length?ships.length+(ships.length===1?' Schiff':' Schiffe')+' ('+(ships.length-still)+' fahrend, '+still+' liegend)':'kein Schiff im geladenen Ausschnitt');
+  let g=null,gd=Infinity;
+  for(const x of gauges.values()){const d=dist([h.lat,h.lon],[x.lat,x.lon]);if(d<gd){gd=d;g=x;}}
+  if(g&&gd<20000)add('Nächster Pegel',g.name+' · '+Math.round(g.value)+' '+g.unit+' · '+nf(gd/1000,gd<10000?1:0)+' km');
+  if(dl.children.length)body.appendChild(dl);
+  if(ships.length){
+    const acts=el('div','acts');
+    for(const s of ships.slice().sort((a,b)=>(isStill(a)?1:0)-(isStill(b)?1:0)).slice(0,8)){const b=el('button','btn',s.name);b.type='button';b.onclick=()=>selectShip(s.m,true);acts.appendChild(b);}
+    body.appendChild(acts);
+  }
+  const wk=el('div','wikibox');body.appendChild(wk);
+  wikiFor(t).then(w=>{
+    if(portSel!==h||state.sheet!=='port')return;
+    if(!w)return;
+    wk.append(w.x);
+    const sm=el('small'),a=el('a',null,'Wikipedia ↗');a.href=w.u;a.target='_blank';a.rel='noopener';
+    sm.append('Text: ',a,' (CC BY-SA)');wk.appendChild(sm);
+  });
+  const links=el('div','links'),web=t.website||t['contact:website']||t.url;
+  if(web&&/^https?:\/\//.test(web)){const a=el('a',null,'Website ↗');a.href=web;a.target='_blank';a.rel='noopener';links.appendChild(a);}
+  const o=el('a',null,'OpenStreetMap ↗');o.href='https://www.openstreetmap.org/'+(h.id[0]==='n'?'node':h.id[0]==='w'?'way':'relation')+'/'+h.id.slice(1);o.target='_blank';o.rel='noopener';links.appendChild(o);
+  body.appendChild(links);
+  if(!web&&!addr&&!t.operator)body.appendChild(el('p','hint','Zu diesem Hafen sind in OpenStreetMap kaum Angaben eingetragen.'));
+}
+/* Hafen am Start oder Ziel eines Schiffs öffnen (aus dem Zwischenspeicher, sonst kurze Abfrage im Umkreis) */
+async function openPortAt(ll){
+  const near=()=>{let b=null,bd=6000;for(const h of portData){const d=dist(ll,[h.lat,h.lon]);if(d<bd){bd=d;b=h;}}return b;};
+  let h=near();
+  if(!h){
+    note('Suche Hafen …',false,15000);
+    try{
+      const c=ll[0].toFixed(5)+','+ll[1].toFixed(5);
+      const r=await overpass('[out:json][timeout:20];'+portFilter('(around:6000,'+c+')')+';out tags bb 200;');
+      const add=parsePorts((await r.json()).elements||[]);
+      for(const x of add)if(!portData.some(o=>o.id===x.id))portData.push(x);
+      h=near();state.note=null;
+    }catch(e){note('Hafen gerade nicht abrufbar.',true,5000);return;}
+  }
+  if(!h){note('In der Nähe ist im Kartenmaterial kein benannter Hafen eingetragen.',false,4000);return;}
+  portSel=h;openSheet('port');
+}
+
 /* Zeichen antippen: Die Kacheln sind Bilder, deshalb fragt die Seite beim Tippen die OpenStreetMap-Daten rund um die Stelle ab (Overpass, ein kleiner Umkreis) */
 const MARK_TYPE={buoy_lateral:'Lateraltonne',buoy_cardinal:'Kardinaltonne',buoy_isolated_danger:'Tonne für Einzelgefahr',buoy_safe_water:'Tonne für sicheres Wasser',buoy_special_purpose:'Sondertonne',
   buoy_installation:'Anlagentonne',beacon_lateral:'Laterale Bake',beacon_cardinal:'Kardinalbake',beacon_isolated_danger:'Bake für Einzelgefahr',beacon_safe_water:'Bake für sicheres Wasser',beacon_special_purpose:'Spezialbake',
@@ -1452,6 +1615,7 @@ function renderAbout(){
   li(el('b',null,'Grundkarte: '),'© Esri und © ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL).');
   li(el('b',null,'Flussverlauf, Wasserwege und Ortssuche: '),'© ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL), über Overpass und Nominatim.');
   li(el('b',null,'Schifffahrtszeichen: '),'© ',a('OpenSeaMap','https://www.openseamap.org'),'.');
+  li(el('b',null,'Häfen: '),'© ',a('OpenStreetMap-Mitwirkende','https://www.openstreetmap.org/copyright'),' (ODbL); Beschreibungen aus ',a('Wikipedia','https://de.wikipedia.org'),' (CC BY-SA), soweit der Hafen dort verknüpft ist.');
   li(el('b',null,'Pegelstände: '),'© Wasserstraßen- und Schifffahrtsverwaltung des Bundes (WSV), über ',a('PEGELONLINE','https://www.pegelonline.wsv.de'),'.');
   box.appendChild(ul);
   box.appendChild(el('p','hint','Unten rechts auf der Karte stehen jeweils nur die Rechteinhaber der Daten, die gerade zu sehen sind.'));
@@ -1491,6 +1655,7 @@ function openSheet(kind){
   if(kind==='news')renderNews();
   if(kind==='about')renderAbout();
   if(kind==='mark')renderMark();
+  if(kind==='port')renderPort();
   if(kind==='gauge')renderGauge();
   map.invalidateSize();paintTrack();
 }
@@ -1514,6 +1679,7 @@ function paintChips(){
   $('typeTxt').textContent=(n===k?'Alle Typen':n?n+' von '+k+' Typen':'Keine Typen')+(state.still?' + liegende':'');
   $('seaChip').setAttribute('aria-pressed',String(state.sea));
   $('pegelChip').setAttribute('aria-pressed',String(state.pegel));
+  $('portChip').setAttribute('aria-pressed',String(state.ports));
 }
 /* Aufklappmenüs: „Typen“ (welche Schiffe) und „Namen“ (bei welchen Typen das Namensschild steht) */
 let menuKind=null;
@@ -1557,6 +1723,7 @@ $('chips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
   if(c.id==='typeBtn')return openMenu('type');
   if(c.id==='seaChip'){state.sea=!state.sea;store.set('sea',state.sea);applySea();}
+  if(c.id==='portChip'){state.ports=!state.ports;store.set('ports',state.ports);if(state.ports)loadPorts();paintPorts();}
   if(c.id==='pegelChip'){state.pegel=!state.pegel;store.set('pegel',state.pegel);if(state.pegel)loadGauges();paintGauges();}
   paintChips();render();paintPass(true);
 });
@@ -1590,16 +1757,17 @@ let moveT=null;
     }else last={t,p};
   });
   map.on('dblclick',e=>map.setZoomAround(e.containerPoint,Math.min(map.getMaxZoom()||19,map.getZoom()+1)));}
-map.on('zoomend',()=>{paintGauges();});
-map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadWays();},900);});
+map.on('zoomend',()=>{paintGauges();paintPorts();});
+map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadWays();loadPorts();},900);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
-setInterval(()=>{loadData();loadGauges();loadWays();},10000);
+setInterval(()=>{loadData();loadGauges();loadWays();loadPorts();},10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData();});
 $('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
 if(!store.get('hint',0))$('hint').hidden=false;
 async function restoreCache(){
-  const [sh,wy]=await Promise.all([kv.get('ships'),kv.get('ways')]);
+  const [sh,wy,pt]=await Promise.all([kv.get('ships'),kv.get('ways'),kv.get('ports')]);
+  if(pt&&pt.data&&pt.box&&Date.now()-pt.at<PORT_TTL){portData=pt.data;portBox=L.latLngBounds([pt.box[0],pt.box[1]],[pt.box[2],pt.box[3]]);portAt=pt.at;}
   const gs=store.get('gauges',[]);for(const g of gs)if(g&&g.number!=null)gauges.set(g.number,g);
   if(wy&&wy.els&&wy.box&&Date.now()-wy.at<7*864e5){const net=buildNet(wy.els);if(net.edges.length){WN=net;wver++;wState='ok';wBox=L.latLngBounds([wy.box[0],wy.box[1]],[wy.box[2],wy.box[3]]);wAt=wy.at;}}
   if(sh&&Array.isArray(sh.ships)&&sh.ships.length&&Date.now()-sh.at<3*3600*1000&&!state.ships.size){
@@ -1608,7 +1776,7 @@ async function restoreCache(){
   }
 }
 paintPlace();paintChips();applySea();
-Promise.race([restoreCache(),new Promise(r=>setTimeout(r,1500))]).catch(()=>{}).then(()=>{render();paintGauges();loadData();loadGauges();loadWays();loadNews();});
+Promise.race([restoreCache(),new Promise(r=>setTimeout(r,1500))]).catch(()=>{}).then(()=>{render();paintGauges();paintPorts();loadData();loadGauges();loadWays();loadPorts();loadNews();});
 </script>
 </body>
 </html>
