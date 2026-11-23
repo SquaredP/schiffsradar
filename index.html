@@ -1530,7 +1530,9 @@ function renderPoi(){
   const links=el('div','links'),web=t.website||t['contact:website']||t.url;
   if(web&&/^https?:\/\//.test(web)){const a=el('a',null,'Website ↗');a.href=web;a.target='_blank';a.rel='noopener';links.appendChild(a);}
   const o=el('a',null,'OpenStreetMap ↗');o.href='https://www.openstreetmap.org/'+(h.id[0]==='n'?'node':h.id[0]==='w'?'way':'relation')+'/'+h.id.slice(1);o.target='_blank';o.rel='noopener';links.appendChild(o);
+  if(h.kind==='lock'){const e=el('a',null,'ELWIS Schleuseninformationen ↗');e.href='https://www.elwis.de';e.target='_blank';e.rel='noopener';links.appendChild(e);}
   body.appendChild(links);
+  if(h.kind==='lock')body.appendChild(el('p','hint','Amtliche Betriebszeiten und aktuelle Sperrungen der Bundesschleusen stehen bei ELWIS (Menü „Schleuseninformationen“), nicht in dieser Karte.'));
   if(!tel.length&&!web&&!mail)body.appendChild(el('p','hint','Telefon und Website sind in OpenStreetMap für diesen Eintrag nicht hinterlegt.'));
 }
 
