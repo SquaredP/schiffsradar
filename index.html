@@ -1079,7 +1079,7 @@ function renderFavs(){
   const body=$('shBody');body.replaceChildren();
   if(!state.favs.length){
     body.appendChild(el('p','hint','Noch kein Schiff gemerkt. Tippe auf der Karte auf ein Schiff und wähle „Merken“. Das lohnt sich bei Fähren und Ausflugsschiffen, die regelmäßig fahren, bei Schiffen, auf die du wartest, oder bei Schiffen von Freunden. Hier siehst du dann, wo sie gerade sind.'));
-    body.append(newsLink(),aboutLink());return;
+    body.append(footLinks());return;
   }
   const now=nowSec();
   state.favs.forEach((f,i)=>{
@@ -1103,7 +1103,7 @@ function renderFavs(){
     box.append(open,rm);body.appendChild(box);
   });
   store.set('favs',state.favs);
-  body.append(newsLink(),aboutLink());
+  body.append(footLinks());
 }
 
 /* ---------- Mein Ort: Vorbeifahrten und Pegel ---------- */
@@ -1646,6 +1646,7 @@ function renderNews(){
   body.appendChild(box);markNewsSeen();
 }
 function newsLink(){const b=el('button','newslink','Was ist neu?');b.type='button';b.onclick=async()=>{if(!news)await loadNews();openSheet('news');};return b;}
+function footLinks(){const d=el('div');d.style.cssText='display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:14px;align-self:flex-start';const n=newsLink(),a=aboutLink();n.style.margin='0';d.append(n,a);return d;}
 function aboutLink(){const b=el('button','newslink','Über Schiffsradar');b.type='button';b.style.marginTop='0';b.onclick=()=>openSheet('about');return b;}
 function renderAbout(){
   $('shTitle').textContent='Über Schiffsradar';

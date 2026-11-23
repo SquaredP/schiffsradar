@@ -5,6 +5,7 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-23
 
+- „Was ist neu?“ und „Über Schiffsradar“ stehen nebeneinander in einer Zeile, wie im Zug- und Flugradar
 - Schleusenblatt verweist auf die amtlichen Schleuseninformationen bei ELWIS (Betriebszeiten, Sperrungen). Eine maschinenlesbare amtliche Schleusenliste mit Telefonnummern gibt es nach aktuellem Stand nicht, deshalb kommen die Einträge weiter aus OpenStreetMap
 - Neu: Chips „Vereine“ (Ruder- und Kanuvereine, Bootshäuser) und „Schleusen“ aus OpenStreetMap, ab Zoom 11 als antippbare Positionen. Das Blatt zeigt Telefonnummern (antippen zum Anrufen), E-Mail, Website, bei Schleusen auch UKW-Kanal, Betreiber und Maße, soweit eingetragen
 - Zurückgenommen: Schifffahrtszeichen sind nicht mehr antippbar und zeigen keine Zusatzinformationen. „Zeichen“ bleibt ein einfacher Schalter, der die Zeichen komplett ein- oder ausblendet
