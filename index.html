@@ -69,6 +69,8 @@ a{color:var(--focus)}
 .chip.still{--c:var(--muted)}
 .chip.still i{border-radius:50%;background:none;border:2px solid var(--c)}
 .chip[aria-expanded="true"]{border-color:var(--fg)}
+.lay{display:none}
+@media (max-width:600px){.lay{display:flex}.layc{display:none}}
 .menu{max-height:60dvh;overflow-y:auto;align-self:flex-start;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.22);padding:6px 4px;min-width:220px}
 .menu h3{margin:4px 10px 2px;font:600 12px/1.2 var(--ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .menu label{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer}
@@ -228,11 +230,12 @@ nav button[aria-current="true"]{color:var(--fg);border-top-color:var(--fg)}
     </div>
     <div class="chips" id="chips">
       <button class="chip" id="typeBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="typeTxt">Typen</span> ▾</button>
-      <button class="chip c-sonst" id="seaChip" type="button" aria-pressed="true"><i></i>Zeichen</button>
-      <button class="chip c-pegel" id="pegelChip" type="button"><i></i>Pegel</button>
-      <button class="chip c-hafen" id="portChip" type="button" aria-pressed="true"><i></i>Häfen</button>
-      <button class="chip c-club" id="clubChip" type="button" aria-pressed="true"><i></i>Vereine</button>
-      <button class="chip c-lock" id="lockChip" type="button" aria-pressed="true"><i></i>Schleusen</button>
+      <button class="chip lay" id="layBtn" type="button" aria-haspopup="true" aria-expanded="false"><span id="layTxt">Ebenen</span> ▾</button>
+      <button class="chip layc c-sonst" id="seaChip" type="button" aria-pressed="true"><i></i>Zeichen</button>
+      <button class="chip layc c-pegel" id="pegelChip" type="button"><i></i>Pegel</button>
+      <button class="chip layc c-hafen" id="portChip" type="button" aria-pressed="true"><i></i>Häfen</button>
+      <button class="chip layc c-club" id="clubChip" type="button" aria-pressed="true"><i></i>Vereine</button>
+      <button class="chip layc c-lock" id="lockChip" type="button" aria-pressed="true"><i></i>Schleusen</button>
       <input class="lineq" id="shipQ" type="search" placeholder="Name oder MMSI" enterkeyhint="search" autocomplete="off" aria-label="Nach Schiffsname oder MMSI filtern">
     </div>
     <div class="menu" id="menu" hidden></div>
@@ -1722,6 +1725,15 @@ $('placeBtn').onclick=()=>{setTab('pass',true);openSheet('place');};
 $('placeClear').onclick=()=>{setPlace(null);if(state.sheet==='pass'||state.sheet==='place')openSheet('place');};
 
 /* ---------- Filter ---------- */
+/* Karten-Ebenen: auf breiten Bildschirmen einzelne Chips, auf schmalen ein Menü „Ebenen“ */
+const LAYERS=[{k:'sea',id:'seaChip',cls:'c-sonst',n:'Zeichen'},{k:'pegel',id:'pegelChip',cls:'c-pegel',n:'Pegel'},{k:'ports',id:'portChip',cls:'c-hafen',n:'Häfen'},{k:'clubs',id:'clubChip',cls:'c-club',n:'Vereine (Ruder und Kanu)'},{k:'locks',id:'lockChip',cls:'c-lock',n:'Schleusen'}];
+function toggleLayer(k){
+  state[k]=!state[k];store.set(k,state[k]);
+  if(k==='sea')applySea();
+  if(k==='clubs'||k==='locks')paintPois();
+  if(k==='ports'){if(state.ports)loadPorts();paintPorts();}
+  if(k==='pegel'){if(state.pegel)loadGauges();paintGauges();}
+}
 function paintChips(){
   const n=state.cats.size,k=CAT_ORDER.length;
   $('typeTxt').textContent=(n===k?'Alle Typen':n?n+' von '+k+' Typen':'Keine Typen')+(state.still?' + liegende':'');
@@ -1730,12 +1742,24 @@ function paintChips(){
   $('portChip').setAttribute('aria-pressed',String(state.ports));
   $('clubChip').setAttribute('aria-pressed',String(state.clubs));
   $('lockChip').setAttribute('aria-pressed',String(state.locks));
+  const on=LAYERS.filter(l=>state[l.k]).length;
+  $('layTxt').textContent='Ebenen · '+on+' von '+LAYERS.length;
 }
 /* Aufklappmenüs: „Typen“ (welche Schiffe) und „Namen“ (bei welchen Typen das Namensschild steht) */
 let menuKind=null;
-function closeMenu(){menuKind=null;$('menu').hidden=true;$('typeBtn').setAttribute('aria-expanded','false');}
+function closeMenu(){menuKind=null;$('menu').hidden=true;$('typeBtn').setAttribute('aria-expanded','false');$('layBtn').setAttribute('aria-expanded','false');}
 function renderMenu(){
-  const box=$('menu'),isType=true,keys=CAT_ORDER;
+  const box=$('menu');
+  if(menuKind==='layers'){
+    box.replaceChildren(el('h3',null,'Diese Ebenen zeigen'));
+    for(const l of LAYERS){
+      const lab=el('label',l.cls),cb=el('input'),dot=el('i');cb.type='checkbox';cb.checked=!!state[l.k];
+      cb.onchange=()=>{toggleLayer(l.k);paintChips();render();paintPass(true);};
+      lab.append(cb,dot,el('span',null,l.n));box.appendChild(lab);
+    }
+    return;
+  }
+  const isType=true,keys=CAT_ORDER;
   box.replaceChildren(el('h3',null,isType?'Diese Schiffstypen zeigen':'Diese Zeichen zeigen'));
   const all=el('div','all'),a1=el('button',null,'Alle'),a2=el('button',null,'Keine');a1.type=a2.type='button';
   const save=()=>store.set('cats',[...state.cats]);
@@ -1764,19 +1788,16 @@ function openMenu(kind){
   if(menuKind===kind){closeMenu();return;}
   if(state.sheet)closeSheet();
   menuKind=kind;renderMenu();$('menu').hidden=false;
-  $('typeBtn').setAttribute('aria-expanded',String(kind==='type'));
+  $('typeBtn').setAttribute('aria-expanded',String(kind==='type'));$('layBtn').setAttribute('aria-expanded',String(kind==='layers'));
 }
 /* composedPath statt closest: „Alle/Keine“ baut das Menü neu, das angeklickte Element ist dann schon abgehängt */
-document.addEventListener('click',e=>{if(menuKind&&!e.composedPath().some(n=>n.id==='menu'||n.id==='typeBtn'))closeMenu();});
+document.addEventListener('click',e=>{if(menuKind&&!e.composedPath().some(n=>n.id==='menu'||n.id==='typeBtn'||n.id==='layBtn'))closeMenu();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu();});
 $('chips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
   if(c.id==='typeBtn')return openMenu('type');
-  if(c.id==='seaChip'){state.sea=!state.sea;store.set('sea',state.sea);applySea();}
-  if(c.id==='clubChip'){state.clubs=!state.clubs;store.set('clubs',state.clubs);paintPois();}
-  if(c.id==='lockChip'){state.locks=!state.locks;store.set('locks',state.locks);paintPois();}
-  if(c.id==='portChip'){state.ports=!state.ports;store.set('ports',state.ports);if(state.ports)loadPorts();paintPorts();}
-  if(c.id==='pegelChip'){state.pegel=!state.pegel;store.set('pegel',state.pegel);if(state.pegel)loadGauges();paintGauges();}
+  if(c.id==='layBtn')return openMenu('layers');
+  const ly=LAYERS.find(l=>l.id===c.id);if(ly)toggleLayer(ly.k);
   paintChips();render();paintPass(true);
 });
 $('shipQ').addEventListener('input',e=>{state.queryRaw=e.target.value.trim();state.query=norm(e.target.value);render();paintPass(true);});
