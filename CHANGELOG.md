@@ -5,6 +5,7 @@ Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hi
 
 ## 2026-11-23
 
+- Handy: Die Seite lässt sich nicht mehr versehentlich zoomen oder verschieben, sodass obere Leiste und Reiter im Bild bleiben. Nur die Karte zoomt
 - Auf schmalen Bildschirmen (bis 600 px) sind Zeichen, Pegel, Häfen, Vereine und Schleusen in einem Chip „Ebenen“ mit Aufklappmenü zusammengefasst. Auf breiten Bildschirmen bleiben die einzelnen Chips
 - „Was ist neu?“ und „Über Schiffsradar“ stehen nebeneinander in einer Zeile, wie im Zug- und Flugradar
 - Schleusenblatt verweist auf die amtlichen Schleuseninformationen bei ELWIS (Betriebszeiten, Sperrungen). Eine maschinenlesbare amtliche Schleusenliste mit Telefonnummern gibt es nach aktuellem Stand nicht, deshalb kommen die Einträge weiter aus OpenStreetMap
