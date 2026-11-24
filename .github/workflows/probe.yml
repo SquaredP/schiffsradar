@@ -5,23 +5,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: EuRIS NtS
+      - name: EuRIS NtS v3
         run: |
           set +e
           UA="Mozilla/5.0 schiffsradar-probe"
-          cat > /tmp/p.py <<'PY'
-          import json,sys
-          n=sys.argv[1]
-          try: d=json.load(open('/tmp/%s.json'%n))
-          except Exception as e: print('kein JSON',e); sys.exit()
-          print('host',d.get('host'),'base',d.get('basePath'),'servers',d.get('servers'),'schemes',d.get('schemes'))
-          print('security',json.dumps(d.get('securityDefinitions') or d.get('components',{}).get('securitySchemes'))[:400], 'global',d.get('security'))
-          for p,v in d.get('paths',{}).items():
-              for m,o in v.items():
-                  if not isinstance(o,dict): continue
-                  print(m.upper(),p,'|',(o.get('summary') or o.get('description') or '')[:90].replace('\n',' '),'| params:',[(q.get('name'),q.get('in')) for q in o.get('parameters',[])][:14],'| sec:',o.get('security'))
-          PY
-          for n in NtS_v3 NtS_v2 Locks_v2; do
-            echo "== DOC $n"; curl -sS -m 25 -A "$UA" -D /tmp/h -o /tmp/$n.json "https://www.eurisportal.eu/swagger/docs/$n"; head -1 /tmp/h | tr -d '\r'; grep -i "^content-type\|access-control" /tmp/h | tr -d '\r'
-            python3 /tmp/p.py $n
-          done
+          echo "== Parameter-Definition"; python3 -c "
+          import json,urllib.request
+          r=urllib.request.Request('https://www.eurisportal.eu/swagger/docs/NtS_v3',headers={'User-Agent':'x'})
+          d=json.load(urllib.request.urlopen(r))
+          print(json.dumps(d['paths']['/api/v3/nts'],indent=0)[:1800])
+          "
+          echo "== Abruf ohne Token"
+          curl -sS -m 40 -A "$UA" -H "Origin: https://squaredp.github.io" -D /tmp/h -o /tmp/n.json "https://www.eurisportal.eu/api/v3/nts?pageSize=3" -w "code=%{http_code} size=%{size_download}\n"
+          tr -d '\r' < /tmp/h | grep -i "^HTTP\|content-type\|access-control\|www-auth\|vary"
+          head -c 2500 /tmp/n.json; echo
+          echo "== filters"; curl -sS -m 30 -A "$UA" -o /tmp/f.json "https://www.eurisportal.eu/api/v3/nts/filters" -w "code=%{http_code}\n"; head -c 600 /tmp/f.json; echo
