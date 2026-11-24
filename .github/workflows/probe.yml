@@ -14,15 +14,15 @@ jobs:
           for n in $(grep -o '"url":"/swagger/docs/[^"]*"' /tmp/api.html | sed 's/"url":"\/swagger\/docs\///;s/"//' | grep -i 'nts\|notice'); do
             echo "== DOC $n"; curl -sS -m 25 -A "$UA" -D /tmp/h -o /tmp/$n.json "https://www.eurisportal.eu/swagger/docs/$n"; head -3 /tmp/h | tr -d '\r'
             python3 - "$n" <<'PY'
-import json,sys
-n=sys.argv[1]
-try: d=json.load(open('/tmp/%s.json'%n))
-except Exception as e: print('kein JSON',e); sys.exit()
-print('host',d.get('host'),'base',d.get('basePath'),'servers',d.get('servers'),'schemes',d.get('schemes'))
-print('securityDefinitions',json.dumps(d.get('securityDefinitions') or d.get('components',{}).get('securitySchemes'))[:400])
-for p,v in d.get('paths',{}).items():
-    for m,o in v.items():
-        if not isinstance(o,dict): continue
-        print(m.upper(),p,'|',o.get('summary') or o.get('description','')[:80],'| params:',[(q.get('name'),q.get('in')) for q in o.get('parameters',[])][:12],'| sec:',o.get('security'))
-PY
+            import json,sys
+            n=sys.argv[1]
+            try: d=json.load(open('/tmp/%s.json'%n))
+            except Exception as e: print('kein JSON',e); sys.exit()
+            print('host',d.get('host'),'base',d.get('basePath'),'servers',d.get('servers'),'schemes',d.get('schemes'))
+            print('securityDefinitions',json.dumps(d.get('securityDefinitions') or d.get('components',{}).get('securitySchemes'))[:400])
+            for p,v in d.get('paths',{}).items():
+                for m,o in v.items():
+                    if not isinstance(o,dict): continue
+                    print(m.upper(),p,'|',o.get('summary') or o.get('description','')[:80],'| params:',[(q.get('name'),q.get('in')) for q in o.get('parameters',[])][:12],'| sec:',o.get('security'))
+            PY
           done
