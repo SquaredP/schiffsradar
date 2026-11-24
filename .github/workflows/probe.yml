@@ -1,0 +1,21 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: EuRIS OpenAPI suchen
+        run: |
+          set +e
+          UA="Mozilla/5.0 schiffsradar-probe"
+          get(){ echo "== $1"; curl -sS -m 25 -L -A "$UA" -D /tmp/h -o /tmp/b "$1" -w "code=%{http_code} type=%{content_type} size=%{size_download}\n"; head -c 600 /tmp/h | grep -i "^HTTP\|access-control\|content-type" ; }
+          get https://www.eurisportal.eu/doc/api
+          grep -o '<script[^>]*src="[^"]*"' /tmp/b | head -10
+          grep -o 'url[^,]\{0,120\}' /tmp/b | head -10
+          for u in https://www.eurisportal.eu/doc/api/swagger-initializer.js https://www.eurisportal.eu/doc/api/swagger-config https://www.eurisportal.eu/doc/api/openapi.json https://www.eurisportal.eu/doc/api/v3/api-docs https://www.eurisportal.eu/visuris/api/v3/api-docs https://www.eurisportal.eu/visuris/api/v2/api-docs https://www.eurisportal.eu/visuris/api/swagger.json; do
+            get "$u"; head -c 400 /tmp/b; echo
+          done
+          get https://developer.eurisportal.eu/docs/getting-started
+          grep -o 'https\?://[A-Za-z0-9./_-]*eurisportal[A-Za-z0-9./_-]*' /tmp/b | sort -u | head -20
+          grep -o '_next/static/[A-Za-z0-9/_.-]*\.js' /tmp/b | sort -u | head -5
