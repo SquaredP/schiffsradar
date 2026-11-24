@@ -3,20 +3,34 @@ on: workflow_dispatch
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - name: EuRIS NtS v3
+      - name: EuRIS NtS v3 Struktur
         run: |
           set +e
-          UA="Mozilla/5.0 schiffsradar-probe"
-          echo "== Parameter-Definition"; python3 -c "
-          import json,urllib.request
-          r=urllib.request.Request('https://www.eurisportal.eu/swagger/docs/NtS_v3',headers={'User-Agent':'x'})
-          d=json.load(urllib.request.urlopen(r))
-          print(json.dumps(d['paths']['/api/v3/nts'],indent=0)[:1800])
-          "
-          echo "== Abruf ohne Token"
-          curl -sS -m 40 -A "$UA" -H "Origin: https://squaredp.github.io" -D /tmp/h -o /tmp/n.json "https://www.eurisportal.eu/api/v3/nts?pageSize=3" -w "code=%{http_code} size=%{size_download}\n"
-          tr -d '\r' < /tmp/h | grep -i "^HTTP\|content-type\|access-control\|www-auth\|vary"
-          head -c 2500 /tmp/n.json; echo
-          echo "== filters"; curl -sS -m 30 -A "$UA" -o /tmp/f.json "https://www.eurisportal.eu/api/v3/nts/filters" -w "code=%{http_code}\n"; head -c 600 /tmp/f.json; echo
+          cat > /tmp/p.py <<'PY'
+          import json,urllib.request,urllib.parse,sys
+          def get(u):
+              r=urllib.request.Request(u,headers={'User-Agent':'schiffsradar'})
+              return json.load(urllib.request.urlopen(r,timeout=60))
+          B='https://www.eurisportal.eu/api/v3/nts'
+          q=B+'?'+urllib.parse.urlencode({'$top':'5','$filter':"countryCode eq 'DE'",'$count':'true'})
+          d=get(q)
+          print('Top-Level-Keys',list(d.keys()),{k:d[k] for k in d if k!='items'})
+          it=d['items']
+          print('Anzahl',len(it))
+          print('ITEM0',json.dumps(it[0],ensure_ascii=False)[:2500])
+          print('keys',sorted(it[0].keys()))
+          hid=it[0]['headerId'];sid=it[0]['sectionId']
+          for cand in [hid+'_'+sid,hid+'-'+sid,hid+':'+sid,hid+'/'+sid,hid+sid]:
+              try:
+                  x=get(B+'/'+urllib.parse.quote(cand,safe=''))
+                  print('DETAIL ok mit',cand[:12]+'…',json.dumps(x,ensure_ascii=False)[:3500]);break
+              except Exception as e: print('DETAIL',cand[:12],'fail',e)
+          q2=B+'?'+urllib.parse.urlencode({'$top':'100','$filter':"countryCode eq 'DE' and dateEnd ge 2026-11-24",'$count':'true'})
+          d2=get(q2);print('aktuelle DE',len(d2['items']),{k:d2[k] for k in d2 if k!='items'})
+          import collections
+          print(collections.Counter(i.get('state') for i in d2['items']),collections.Counter(i.get('messageType') for i in d2['items']))
+          print('Titel',[i['title'][:60] for i in d2['items'][:5]])
+          PY
+          python3 /tmp/p.py 2>&1 | cut -c1-3600
