@@ -14,23 +14,20 @@ jobs:
               r=urllib.request.Request(u,headers={'User-Agent':'schiffsradar'})
               return json.load(urllib.request.urlopen(r,timeout=60))
           B='https://www.eurisportal.eu/api/v3/nts'
-          q=B+'?'+urllib.parse.urlencode({'$top':'5','$filter':"countryCode eq 'DE'",'$count':'true'})
-          d=get(q)
-          print('Top-Level-Keys',list(d.keys()),{k:d[k] for k in d if k!='items'})
-          it=d['items']
-          print('Anzahl',len(it))
-          print('ITEM0',json.dumps(it[0],ensure_ascii=False)[:2500])
-          print('keys',sorted(it[0].keys()))
-          hid=it[0]['headerId'];sid=it[0]['sectionId']
-          for cand in [hid+'_'+sid,hid+'-'+sid,hid+':'+sid,hid+'/'+sid,hid+sid]:
-              try:
-                  x=get(B+'/'+urllib.parse.quote(cand,safe=''))
-                  print('DETAIL ok mit',cand[:12]+'…',json.dumps(x,ensure_ascii=False)[:3500]);break
-              except Exception as e: print('DETAIL',cand[:12],'fail',e)
-          q2=B+'?'+urllib.parse.urlencode({'$top':'100','$filter':"countryCode eq 'DE' and dateEnd ge 2026-11-24",'$count':'true'})
-          d2=get(q2);print('aktuelle DE',len(d2['items']),{k:d2[k] for k in d2 if k!='items'})
           import collections
-          print(collections.Counter(i.get('state') for i in d2['items']),collections.Counter(i.get('messageType') for i in d2['items']))
-          print('Titel',[i['title'][:60] for i in d2['items'][:5]])
+          def tryq(f,extra={}):
+              p={'$top':'100','$count':'true','$filter':f};p.update(extra)
+              try:
+                  d=get(B+'?'+urllib.parse.urlencode(p));print('OK',f,'->count',d.get('count'),'items',len(d['items']));return d
+              except Exception as e: print('FAIL',f,e);return None
+          for f in ["countryCode eq 'DE' and dateEnd ge '2026-11-24'","countryCode eq 'DE' and dateEnd ge 2026-11-24","countryCode eq 'DE' and state eq 80","countryCode eq 'DE' and year eq '2026'","countryCode eq 'DE' and dateEnd ge 2026-11-24T00:00:00Z"]:
+              tryq(f)
+          d=tryq("countryCode eq 'DE' and year eq '2026'",{'$orderby':'dateIssue desc'})
+          if d:
+              it=d['items'];print('neueste',it[0]['dateIssue'],it[-1]['dateIssue'])
+              act=[i for i in it if i['dateEnd']>='2026-11-24' and i['dateStart']<='2026-11-25']
+              print('aktuell von 100:',len(act));print(collections.Counter(f for i in act for f in i['fairways']).most_common(12))
+              print(collections.Counter(i['messageTypeMessage'] for i in act),collections.Counter(l for i in act for l in i['limitations']))
+              for i in act[:6]: print(i['dateStart'],i['dateEnd'],i['fairways'],json.loads(i['multilanguageTitles']).get('de'),i['limitations'])
           PY
           python3 /tmp/p.py 2>&1 | cut -c1-3600
