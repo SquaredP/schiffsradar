@@ -3,11 +3,14 @@
 Neue Funktionen und Korrekturen am Schiffsradar. Neueste Einträge oben.
 Die Seite liest diese Datei selbst und zeigt nach einem Update einmalig einen Hinweis an.
 
-## 2026-11-23
+## 2026-11-25
 
 - Schneller und ohne Verschwinden beim Verschieben der Karte: Häfen, Vereine und Schleusen werden mit einer gemeinsamen Abfrage geladen, bleiben beim Verschieben erhalten und erscheinen sofort, wenn der Ausschnitt schon geladen war. Vorher wurden sie nur beim Zoomen neu gezeichnet und bei jedem neuen Ausschnitt ersetzt
 - Schiffe außerhalb des Ausschnitts bleiben bis 90 Minuten im Speicher und müssen beim Zurückschieben nicht neu geladen werden. Wurde während einer Abfrage verschoben, folgt sofort eine neue, statt bis zu 10 Sekunden zu warten
 - Overpass-Abfragen gehen gestaffelt an mehrere Server (zweiter nach 4 s, dritter nach 8 s), der erste Treffer zählt. Vorher wartete die Seite bei einem trägen Server bis zu 40 Sekunden
+
+## 2026-11-23
+
 - Handy: Die Seite lässt sich nicht mehr versehentlich zoomen oder verschieben, sodass obere Leiste und Reiter im Bild bleiben. Nur die Karte zoomt
 - Auf schmalen Bildschirmen (bis 600 px) sind Zeichen, Pegel, Häfen, Vereine und Schleusen in einem Chip „Ebenen“ mit Aufklappmenü zusammengefasst. Auf breiten Bildschirmen bleiben die einzelnen Chips
 - „Was ist neu?“ und „Über Schiffsradar“ stehen nebeneinander in einer Zeile, wie im Zug- und Flugradar
