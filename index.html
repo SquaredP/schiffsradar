@@ -306,17 +306,22 @@ function courseOf(s){return s.cog!=null?s.cog:s.hdg!=null?s.hdg:null;}
 /* Overpass: mehrere öffentliche Server nacheinander probieren (einzelne sind oft überlastet) */
 const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
 async function overpass(q){
-  let last;
-  for(const u of OVERPASS){
-    const ac=new AbortController(),t=setTimeout(()=>ac.abort(),40000);
-    try{
-      const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ac.signal});
-      if(r.ok){clearTimeout(t);return r;}
-      last=new Error(r.status);
-    }catch(e){last=e;}
-    clearTimeout(t);
-  }
-  throw last;
+  /* Gestaffelt: Server 1 sofort, Server 2 nach 4 s, Server 3 nach 8 s (falls bis dahin keiner geantwortet hat). Der erste brauchbare Treffer gewinnt. */
+  const ctl=OVERPASS.map(()=>new AbortController());
+  return new Promise((resolve,reject)=>{
+    let open=OVERPASS.length,done=false,last;
+    const fail=e=>{last=e;if(--open===0&&!done)reject(last);};
+    OVERPASS.forEach((u,i)=>setTimeout(async()=>{
+      if(done){fail(new Error('skip'));return;}
+      const t=setTimeout(()=>ctl[i].abort(),40000);
+      try{
+        const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl[i].signal});
+        clearTimeout(t);
+        if(r.ok&&!done){done=true;ctl.forEach((c,j)=>{if(j!==i)c.abort();});resolve(r);return;}
+        fail(new Error(r.status));
+      }catch(e){clearTimeout(t);fail(e);}
+    },i*4000));
+  });
 }
 let WN=null,wver=0,wState='lädt';   // WN: {nodes:Map(id->{ll,nb:[id]}), edges:[[idA,idB]]}
 function buildNet(els){
@@ -589,7 +594,7 @@ let meMarker=null,placeMarker=null,route=null;
 /* Schiffe erst ab diesem Zoom (ca. 20 km Breite auf dem Handy) und nur für den sichtbaren Ausschnitt */
 const MIN_ZOOM=11;
 const LIVE='https://ais.openwaters.io/v1/vessels';
-let loadingData=false,liveFailAt=0,lastFile=0;
+let loadAgain=false,loadingData=false,liveFailAt=0,lastFile=0;
 const toSec=v=>{if(v==null)return null;if(typeof v==='number')return v>1e12?v/1000:v;const t=Date.parse(v);return isNaN(t)?null:t/1000;};
 const num=v=>typeof v==='number'&&isFinite(v)?v:null;
 function typeNum(t){
@@ -605,7 +610,7 @@ function addTrack(s,prev){
   tr.push(s.lat,s.lon,s.ts);
   return tr.length>180?tr.slice(-180):tr;
 }
-function parseLive(j,prev){
+function parseLive(j,prev,box){
   const ships=new Map(),now=nowSec();
   for(const f of(j&&Array.isArray(j.features)?j.features:[])){
     const c=f.geometry&&f.geometry.coordinates,p=f.properties||{};
@@ -621,6 +626,14 @@ function parseLive(j,prev){
   /* Verfolgtes und gemerkte Schiffe bleiben, auch wenn sie den Ausschnitt verlassen haben */
   const keep=new Set(state.favs.map(f=>f.m));if(state.sel)keep.add(state.sel.m);
   for(const m of keep)if(!ships.has(m)&&prev.has(m))ships.set(m,prev.get(m));
+  /* Schiffe außerhalb des abgefragten Ausschnitts bleiben (bis 90 min alt), damit sie beim Zurückschieben nicht neu geladen werden müssen */
+  if(box){
+    for(const[m,o]of prev){
+      if(ships.has(m)||box.contains([o.lat,o.lon])||now-o.ts>5400)continue;
+      ships.set(m,o);
+    }
+    if(ships.size>4000){const keepM=new Set([...ships.values()].sort((a,b)=>b.ts-a.ts).slice(0,4000).map(x=>x.m));for(const m of[...ships.keys()])if(!keepM.has(m))ships.delete(m);}
+  }
   return ships;
 }
 /* Ziel, Ankunft, Abmessungen und Start kommen nicht aus den Live-Daten. Die Seite liest sie aus data/ships.json (Sammler, aisstream)
@@ -685,7 +698,7 @@ async function loadLive(){
   if(r.status===429)throw new Error('zu viele Anfragen (429)');
   if(!r.ok)throw new Error('Serverfehler '+r.status);
   const j=await r.json();
-  state.ships=parseLive(j,state.ships);
+  state.ships=parseLive(j,state.ships,b);
   state.meta={ok:true,live:true,generated:Math.floor(Date.now()/1000),truncated:!!j.truncated};
   applyStatics();noteOrigins();loadStatic();
   state.err=null;state.lastOk=Date.now();state.fresh=true;saveShips();
@@ -703,7 +716,8 @@ async function loadFile(){
   state.ships=ships;state.meta=j;state.err=null;state.lastOk=Date.now();lastFile=Date.now();state.fresh=true;noteOrigins();saveShips();
 }
 async function loadData(){
-  if(document.hidden||loadingData)return;
+  if(document.hidden)return;
+  if(loadingData){loadAgain=true;return;}
   if(state.src==='live'&&map.getZoom()<MIN_ZOOM){render();return;}   // nichts abfragen, solange man herausgezoomt ist
   loadingData=true;
   try{
@@ -720,7 +734,7 @@ async function loadData(){
     state.err=e.message==='missing'?'Keine Live-Schiffsdaten erreichbar und noch keine Datei veröffentlicht (siehe README).'
       :'Schiffsdaten: '+(e.message||'Fehler')+'. Neuer Versuch in einer Minute.';
     setStatus(state.err,true);
-  }finally{loadingData=false;}
+  }finally{loadingData=false;if(loadAgain){loadAgain=false;setTimeout(loadData,50);}}
 }
 function setStatus(text,err){const s=$('status');s.textContent=text;s.classList.toggle('err',!!err);}
 function note(text,err,ms){state.note={text,err:!!err,until:Date.now()+ms};setStatus(text,!!err);}
@@ -1311,18 +1325,31 @@ function parsePorts(els){
   }
   return out;
 }
+/* Häfen, Vereine und Schleusen kommen aus einer gemeinsamen Overpass-Abfrage. Neue Ausschnitte werden zu den vorhandenen Daten
+   hinzugefügt (nichts verschwindet beim Verschieben); abgedeckte Ausschnitte merkt sich die Seite 7 Tage. */
+let placeBoxes=[],placeBusy=false,placeWant=false;
+const isPoiTags=t=>t.lock==='yes'||t.waterway==='lock_gate'||t.waterway==='lock'||t['seamark:type']==='lock_basin'||t.building==='boathouse'||t.club==='sport'||/rowing|canoe|kayak/.test(t.sport||'');
+function mergeById(old,add){const m=new Map(old.map(x=>[x.id,x]));for(const x of add)m.set(x.id,x);return[...m.values()].slice(-4000);}
+function savePlaces(){kv.set('places',{boxes:placeBoxes.map(b=>({at:b.at,box:b.box})),ports:portData,pois:poiData});}
+function placesCovered(){const v=map.getBounds();return placeBoxes.some(b=>Date.now()-b.at<PORT_TTL&&b.bounds.contains(v));}
 async function loadPorts(){
-  if(!state.ports||map.getZoom()<PORT_ZOOM||document.hidden||portBusy)return;
-  if(portBox&&portBox.contains(map.getBounds())&&Date.now()-portAt<PORT_TTL)return;
-  const b=map.getBounds().pad(.4);portBusy=true;
+  if(!(state.ports||state.clubs||state.locks)||map.getZoom()<PORT_ZOOM||document.hidden)return;
+  if(placeBusy){placeWant=true;return;}
+  if(placesCovered())return;
+  const b=map.getBounds().pad(.4);placeBusy=true;
   try{
     const bb='('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+')';
-    const r=await overpass('[out:json][timeout:25];'+portFilter(bb)+';out tags bb 1500;');
-    portData=parsePorts((await r.json()).elements||[]);portBox=b;portAt=Date.now();
-    kv.set('ports',{at:portAt,box:[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()],data:portData});
-  }catch(e){portAt=Date.now()-PORT_TTL+300000;}finally{portBusy=false;}
-  paintPorts();
+    const r=await overpass('[out:json][timeout:25];('+portFilter(bb)+';'+POI_Q(bb)+';);out tags bb center 3000;');
+    const els=(await r.json()).elements||[];
+    const pe=[],oe=[];for(const e of els)(isPoiTags(e.tags||{})?oe:pe).push(e);
+    portData=mergeById(portData,parsePorts(pe));poiData=mergeById(poiData,parsePois(oe));
+    placeBoxes.push({at:Date.now(),box:[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()],bounds:b});
+    placeBoxes=placeBoxes.slice(-12);savePlaces();
+  }catch(e){}finally{placeBusy=false;}
+  paintPorts();paintPois();
+  if(placeWant){placeWant=false;setTimeout(loadPorts,100);}
 }
+function loadPois(){}
 function paintPorts(){
   portLayer.clearLayers();
   if(!state.ports||map.getZoom()<PORT_ZOOM)return;
@@ -1468,18 +1495,6 @@ function parsePois(els){
     if(dup)dup.t={...it.t,...dup.t};else out.push(it);
   }
   return out;
-}
-async function loadPois(){
-  if(!(state.clubs||state.locks)||map.getZoom()<PORT_ZOOM||document.hidden||poiBusy)return;
-  if(poiBox&&poiBox.contains(map.getBounds())&&Date.now()-poiAt<PORT_TTL)return;
-  const b=map.getBounds().pad(.4);poiBusy=true;
-  try{
-    const bb='('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(5)).join(',')+')';
-    const r=await overpass('[out:json][timeout:25];'+POI_Q(bb)+';out tags center 1500;');
-    poiData=parsePois((await r.json()).elements||[]);poiBox=b;poiAt=Date.now();
-    kv.set('pois',{at:poiAt,box:[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()],data:poiData});
-  }catch(e){poiAt=Date.now()-PORT_TTL+300000;}finally{poiBusy=false;}
-  paintPois();
 }
 function paintPois(){
   poiLayer.clearLayers();
@@ -1834,7 +1849,7 @@ let moveT=null;
   });
   map.on('dblclick',e=>map.setZoomAround(e.containerPoint,Math.min(map.getMaxZoom()||19,map.getZoom()+1)));}
 map.on('zoomend',()=>{paintGauges();paintPorts();paintPois();});
-map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadWays();loadPorts();loadPois();},900);});
+map.on('moveend',()=>{const c=map.getCenter();store.set('view',{c:[c.lat,c.lng],z:map.getZoom()});if(!(state.sel&&state.sel.follow))render();paintPorts();paintPois();clearTimeout(moveT);moveT=setTimeout(()=>{if(state.src==='live')loadData();loadGauges();loadWays();loadPorts();loadPois();},450);});
 map.on('dragstart',()=>{if(state.sel&&state.sel.follow){state.sel.follow=false;const b=$('followBtn');if(b)b.setAttribute('aria-pressed','false');}});
 setInterval(()=>{if(!document.hidden){render();paintPass();}},1000);
 setInterval(()=>{loadData();loadGauges();loadWays();loadPorts();loadPois();},10000);
@@ -1842,9 +1857,11 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadData()
 $('hintX').onclick=$('hintOpen').onclick=()=>{store.set('hint',1);$('hint').hidden=true;};
 if(!store.get('hint',0))$('hint').hidden=false;
 async function restoreCache(){
-  const [sh,wy,pt,po]=await Promise.all([kv.get('ships'),kv.get('ways'),kv.get('ports'),kv.get('pois')]);
-  if(pt&&pt.data&&pt.box&&Date.now()-pt.at<PORT_TTL){portData=pt.data;portBox=L.latLngBounds([pt.box[0],pt.box[1]],[pt.box[2],pt.box[3]]);portAt=pt.at;}
-  if(po&&po.data&&po.box&&Date.now()-po.at<PORT_TTL){poiData=po.data;poiBox=L.latLngBounds([po.box[0],po.box[1]],[po.box[2],po.box[3]]);poiAt=po.at;}
+  const [sh,wy,pl]=await Promise.all([kv.get('ships'),kv.get('ways'),kv.get('places')]);
+  if(pl&&Array.isArray(pl.boxes)){
+    portData=pl.ports||[];poiData=pl.pois||[];
+    placeBoxes=pl.boxes.filter(x=>x&&x.box&&Date.now()-x.at<PORT_TTL).map(x=>({at:x.at,box:x.box,bounds:L.latLngBounds([x.box[0],x.box[1]],[x.box[2],x.box[3]])}));
+  }
   const gs=store.get('gauges',[]);for(const g of gs)if(g&&g.number!=null)gauges.set(g.number,g);
   if(wy&&wy.els&&wy.box&&Date.now()-wy.at<7*864e5){const net=buildNet(wy.els);if(net.edges.length){WN=net;wver++;wState='ok';wBox=L.latLngBounds([wy.box[0],wy.box[1]],[wy.box[2],wy.box[3]]);wAt=wy.at;}}
   if(sh&&Array.isArray(sh.ships)&&sh.ships.length&&Date.now()-sh.at<3*3600*1000&&!state.ships.size){
